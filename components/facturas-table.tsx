@@ -1,0 +1,242 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  SortingState,
+  useReactTable
+} from "@tanstack/react-table";
+import { motion } from "framer-motion";
+import { ArrowUpDown, FileText, Search } from "lucide-react";
+import {
+  EstadoDocumentalBadge,
+  EstadoPagoBadge,
+  EstadoVencimientoBadge
+} from "@/components/status-badges";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/form";
+import { Progress } from "@/components/ui/progress";
+import { formatearFolioDocumento } from "@/lib/document-ids";
+import { formatCurrency, formatDate } from "@/lib/formatters";
+import { FacturaCalculada } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+type FiltroFactura =
+  | "Todas"
+  | "Vigentes"
+  | "Vencidas"
+  | "No pagadas"
+  | "Pagadas parcialmente"
+  | "Pagadas completamente"
+  | "Anuladas"
+  | "Con NC"
+  | "Con ND";
+
+const filtros: FiltroFactura[] = [
+  "Todas",
+  "Vigentes",
+  "Vencidas",
+  "No pagadas",
+  "Pagadas parcialmente",
+  "Pagadas completamente",
+  "Anuladas",
+  "Con NC",
+  "Con ND"
+];
+
+function aplicaFiltro(factura: FacturaCalculada, filtro: FiltroFactura) {
+  if (filtro === "Todas") return true;
+  if (filtro === "Vigentes") return factura.estadoVencimiento === "Factura Vigente";
+  if (filtro === "Vencidas") return factura.estadoVencimiento === "Factura Vencida";
+  if (filtro === "No pagadas") return factura.estadoPago === "No Pagado";
+  if (filtro === "Pagadas parcialmente") return factura.estadoPago === "Pagado Parcialmente";
+  if (filtro === "Pagadas completamente") return factura.estadoPago === "Pagado Completamente";
+  if (filtro === "Anuladas") return factura.estadoDocumental === "Anulada";
+  if (filtro === "Con NC") return factura.notasCredito.length > 0;
+  return factura.notasDebito.length > 0;
+}
+
+export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
+  const [filtro, setFiltro] = useState<FiltroFactura>("Todas");
+  const [query, setQuery] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  const data = useMemo(() => {
+    const term = query.trim().toLowerCase();
+
+    return facturas.filter((factura) => {
+      const folio = formatearFolioDocumento(factura.tipoDocumento, factura.numero);
+      const matchesFiltro = aplicaFiltro(factura, filtro);
+      const matchesQuery =
+        term.length === 0 ||
+        factura.numero.toLowerCase().includes(term) ||
+        folio.toLowerCase().includes(term) ||
+        factura.cliente.nombre.toLowerCase().includes(term) ||
+        factura.cliente.rut.toLowerCase().includes(term);
+
+      return matchesFiltro && matchesQuery;
+    });
+  }, [facturas, filtro, query]);
+
+  const columns = useMemo<ColumnDef<FacturaCalculada>[]>(
+    () => [
+      {
+        accessorKey: "numero",
+        header: "Documento",
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1 font-semibold text-primary ring-1 ring-primary/15">
+            <FileText className="size-3.5" aria-hidden="true" />
+            {formatearFolioDocumento(row.original.tipoDocumento, row.original.numero)}
+          </span>
+        )
+      },
+      {
+        accessorKey: "tipoDocumento",
+        header: "Tipo documento",
+        cell: ({ row }) => <span className="max-w-44 text-wrap">{row.original.tipoDocumento}</span>
+      },
+      {
+        accessorFn: (row) => row.cliente.nombre,
+        id: "cliente",
+        header: "Cliente"
+      },
+      {
+        accessorKey: "fechaEmision",
+        header: "Fecha emisión",
+        cell: ({ row }) => formatDate(row.original.fechaEmision)
+      },
+      {
+        accessorKey: "fechaVencimiento",
+        header: "Fecha vencimiento",
+        cell: ({ row }) => formatDate(row.original.fechaVencimiento)
+      },
+      {
+        accessorKey: "condicionPago",
+        header: "Condición de pago"
+      },
+      {
+        accessorKey: "monto",
+        header: "Monto factura",
+        cell: ({ row }) => formatCurrency(row.original.monto)
+      },
+      {
+        accessorKey: "saldoPendiente",
+        header: "Saldo pendiente",
+        cell: ({ row }) => (
+          <div className="min-w-36 space-y-2">
+            <span className="number-tabular font-medium">
+              {formatCurrency(row.original.saldoPendiente)}
+            </span>
+            <Progress value={row.original.progresoPago} />
+          </div>
+        )
+      },
+      {
+        accessorKey: "estadoVencimiento",
+        header: "Estado vencimiento",
+        cell: ({ row }) => <EstadoVencimientoBadge estado={row.original.estadoVencimiento} />
+      },
+      {
+        accessorKey: "estadoPago",
+        header: "Estado pago",
+        cell: ({ row }) => <EstadoPagoBadge estado={row.original.estadoPago} />
+      },
+      {
+        accessorKey: "estadoDocumental",
+        header: "Estado documental",
+        cell: ({ row }) => <EstadoDocumentalBadge estado={row.original.estadoDocumental} />
+      }
+    ],
+    []
+  );
+
+  const table = useReactTable({
+    data,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel()
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-4"
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {filtros.map((item) => (
+            <Button
+              key={item}
+              type="button"
+              variant={item === filtro ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFiltro(item)}
+              className="shadow-sm"
+            >
+              {item}
+            </Button>
+          ))}
+        </div>
+        <label className="relative block w-full lg:w-80">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar documento, cliente o RUT"
+            className="bg-white/90 pl-9"
+          />
+        </label>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-white/90 shadow-sm backdrop-blur">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] border-collapse text-sm">
+            <thead className="bg-slate-950 text-left text-xs uppercase text-white/70">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <th key={header.id} className="px-4 py-3 font-semibold">
+                      <button
+                        type="button"
+                        className={cn(
+                          "inline-flex items-center gap-1",
+                          header.column.getCanSort() && "cursor-pointer"
+                        )}
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        <ArrowUpDown className="size-3" />
+                      </button>
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map((row) => (
+                <tr key={row.id} className="border-t transition hover:bg-primary/5">
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-4 py-3 align-middle">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {data.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No hay facturas para el filtro seleccionado.
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}

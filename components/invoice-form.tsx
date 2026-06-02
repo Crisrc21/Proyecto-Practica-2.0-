@@ -1,0 +1,276 @@
+"use client";
+
+import { FormEvent, useMemo, useState } from "react";
+import {
+  CalendarDays,
+  FileCheck2,
+  FileDigit,
+  Save,
+  UploadCloud,
+  X
+} from "lucide-react";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input, Label, Select, Textarea } from "@/components/ui/form";
+import { calcularFechaVencimiento } from "@/lib/cxc-calculations";
+import { formatearFolioDocumento, obtenerPrefijoDocumento } from "@/lib/document-ids";
+import { formatCurrency, formatDate, toIsoDate } from "@/lib/formatters";
+import { Cliente, CondicionPago, TipoDocumento } from "@/lib/types";
+
+const condicionesPago: CondicionPago[] = [
+  "Contado",
+  "Contra Pago",
+  "15 días",
+  "30 días",
+  "45 días",
+  "60 días"
+];
+
+const tiposDocumento: TipoDocumento[] = [
+  "Factura Electrónica 33",
+  "Factura Exenta Electrónica 34"
+];
+
+export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
+  const [numeroSii, setNumeroSii] = useState("000151");
+  const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento>(tiposDocumento[0]);
+  const [clienteId, setClienteId] = useState(clientes[0]?.id ?? "");
+  const [fechaEmision, setFechaEmision] = useState(toIsoDate(new Date()));
+  const [condicionPago, setCondicionPago] = useState<CondicionPago>("30 días");
+  const [monto, setMonto] = useState("2500000");
+  const [observacion, setObservacion] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const fechaVencimiento = useMemo(
+    () => calcularFechaVencimiento(fechaEmision, condicionPago),
+    [fechaEmision, condicionPago]
+  );
+
+  const cliente = clientes.find((item) => item.id === clienteId);
+  const montoNumerico = Number(monto) || 0;
+  const prefijoDocumento = obtenerPrefijoDocumento(tipoDocumento);
+  const folioDocumento = formatearFolioDocumento(tipoDocumento, numeroSii);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaved(true);
+  }
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b bg-white/70">
+            <CardTitle>Nueva factura</CardTitle>
+            <CardDescription>
+              El vencimiento se calcula desde emisión y condición de pago.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+              <div className="space-y-2">
+                <Label htmlFor="numeroSii">Número SII</Label>
+                <div className="flex overflow-hidden rounded-md border border-input bg-white shadow-sm focus-within:ring-2 focus-within:ring-ring">
+                  <span className="flex min-w-14 items-center justify-center border-r bg-primary/10 px-3 text-sm font-semibold text-primary">
+                    {prefijoDocumento}
+                  </span>
+                  <Input
+                    id="numeroSii"
+                    value={numeroSii}
+                    onChange={(event) => setNumeroSii(event.target.value)}
+                    className="border-0 shadow-none focus:ring-0"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tipoDocumento">Tipo documento</Label>
+                <Select
+                  id="tipoDocumento"
+                  value={tipoDocumento}
+                  onChange={(event) => setTipoDocumento(event.target.value as TipoDocumento)}
+                >
+                  {tiposDocumento.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {tipo}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cliente">Cliente</Label>
+                <Select
+                  id="cliente"
+                  value={clienteId}
+                  onChange={(event) => setClienteId(event.target.value)}
+                >
+                  {clientes.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.nombre}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fechaEmision">Fecha emisión</Label>
+                <Input
+                  id="fechaEmision"
+                  type="date"
+                  value={fechaEmision}
+                  onChange={(event) => setFechaEmision(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="condicionPago">Condición de pago</Label>
+                <Select
+                  id="condicionPago"
+                  value={condicionPago}
+                  onChange={(event) => setCondicionPago(event.target.value as CondicionPago)}
+                >
+                  {condicionesPago.map((condicion) => (
+                    <option key={condicion} value={condicion}>
+                      {condicion}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="monto">Monto</Label>
+                <Input
+                  id="monto"
+                  type="number"
+                  min="0"
+                  value={monto}
+                  onChange={(event) => setMonto(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="observacion">Observación</Label>
+                <Textarea
+                  id="observacion"
+                  value={observacion}
+                  onChange={(event) => setObservacion(event.target.value)}
+                  placeholder="Detalle opcional para cobranza o trazabilidad"
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="pdf">Archivo PDF</Label>
+                <label className="group flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-primary/30 bg-[linear-gradient(135deg,rgba(9,106,124,0.08),rgba(20,148,109,0.08))] px-4 py-6 text-center transition hover:border-primary hover:bg-primary/10">
+                  <UploadCloud
+                    className="size-9 text-primary transition group-hover:-translate-y-0.5"
+                    aria-hidden="true"
+                  />
+                  <span className="mt-3 text-sm font-semibold">Subir PDF del documento</span>
+                  <span className="mt-1 text-xs text-muted-foreground">
+                    Adjuntar factura, NC o ND en formato PDF
+                  </span>
+                  <input
+                    id="pdf"
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="sr-only"
+                    onChange={(event) => setPdfFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {pdfFile && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center justify-between gap-3 rounded-md border bg-white p-3 text-sm shadow-sm"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <FileCheck2 className="size-5 shrink-0 text-emerald-600" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{pdfFile.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      onClick={() => setPdfFile(null)}
+                      aria-label="Quitar PDF"
+                    >
+                      <X className="size-4" aria-hidden="true" />
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+              <div className="sm:col-span-2">
+                <Button type="submit">
+                  <Save className="size-4" aria-hidden="true" />
+                  Registrar localmente
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08 }}
+      >
+        <Card className="sticky top-5 overflow-hidden">
+          <CardHeader className="border-b bg-primary text-primary-foreground">
+            <CardTitle className="flex items-center gap-2">
+              <FileDigit className="size-5" aria-hidden="true" />
+              Resumen
+            </CardTitle>
+            <CardDescription className="text-primary-foreground/80">
+              Vista previa del documento
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-3 rounded-md bg-muted p-3">
+              <CalendarDays className="size-5 text-primary" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-medium">Vence el {formatDate(fechaVencimiento)}</p>
+                <p className="text-xs text-muted-foreground">{condicionPago}</p>
+              </div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Documento</span>
+                <span className="rounded-md bg-primary/10 px-2 py-1 font-semibold text-primary">
+                  {folioDocumento}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Cliente</span>
+                <span className="text-right font-medium">{cliente?.nombre}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Monto</span>
+                <span className="number-tabular font-medium">{formatCurrency(montoNumerico)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Saldo inicial</span>
+                <span className="number-tabular font-medium">{formatCurrency(montoNumerico)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">PDF</span>
+                <span className="max-w-40 truncate text-right font-medium">
+                  {pdfFile?.name ?? "Pendiente"}
+                </span>
+              </div>
+            </div>
+            {saved && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+              >
+                Factura preparada en modo local. La persistencia real queda lista para conectar a SQL.
+              </motion.div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+    </div>
+  );
+}
