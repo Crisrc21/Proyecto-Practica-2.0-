@@ -1,4 +1,5 @@
 import { FacturasTable } from "@/components/facturas-table";
+import { DocumentMixSummary } from "@/components/document-mix-summary";
 import { PageHeader } from "@/components/page-header";
 import { enriquecerFactura } from "@/lib/cxc-calculations";
 import { clientesMock, facturasMock } from "@/lib/mock-data";
@@ -17,6 +18,7 @@ export default async function FacturasPage({
         title="Facturas"
         description="Consulta de documentos, saldos, estados de pago, vencimiento y trazabilidad documental."
       />
+      <DocumentMixSummary facturas={facturas} />
       <FacturasTable facturas={facturas} initialFiltro={params?.filtro} initialQuery={params?.busqueda ?? ""} />
     </>
   );

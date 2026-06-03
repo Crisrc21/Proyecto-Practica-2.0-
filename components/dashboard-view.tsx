@@ -16,7 +16,6 @@ import {
   FileClock,
   Gauge,
   HandCoins,
-  Layers3,
   LineChart,
   ShieldAlert,
   Sparkles,
@@ -51,13 +50,14 @@ export function DashboardView({
   kpis: KpisDashboard;
   facturas: FacturaCalculada[];
 }) {
-  const [focus, setFocus] = useState<"flujo" | "estado" | "historico" | "aging">("flujo");
+  const [focus, setFocus] = useState<"flujo" | "estado" | "historico">("flujo");
   const [activeChartKey, setActiveChartKey] = useState<string | null>(null);
   const [activeCashKey, setActiveCashKey] = useState<"cobrado" | "pendiente">("cobrado");
-  const [activePaymentKey, setActivePaymentKey] = useState<"vigente" | "vencida" | "pagada">("vencida");
+  const [activePaymentKey, setActivePaymentKey] = useState<"cobrado" | "vigente" | "vencido">("vencido");
   const [activeTrendKey, setActiveTrendKey] = useState<string | null>(null);
   const [activeAgingKey, setActiveAgingKey] = useState<string | null>(null);
-  const [activePeriod, setActivePeriod] = useState("Todo");
+  const [mapStartDate, setMapStartDate] = useState("2026-01-01");
+  const [mapEndDate, setMapEndDate] = useState("2026-06-30");
   const recovery = Math.round((kpis.montoCobrado / Math.max(kpis.carteraTotal, 1)) * 100);
   const mora = Math.round((kpis.pendienteVencido / Math.max(kpis.montoPendiente, 1)) * 100);
   const partialCount = facturas.filter((factura) => factura.estadoPago === "Pagado Parcialmente").length;
@@ -156,86 +156,159 @@ export function DashboardView({
     }
   ];
 
+  const mapFacturas = useMemo(
+    () =>
+      facturas.filter(
+        (factura) =>
+          factura.fechaEmision >= mapStartDate &&
+          factura.fechaEmision <= mapEndDate
+      ),
+    [facturas, mapEndDate, mapStartDate]
+  );
+
+  const mapKpis = useMemo(() => {
+    const montoCobrado = mapFacturas.reduce((total, factura) => total + factura.montoCobrado, 0);
+    const montoPendiente = mapFacturas.reduce((total, factura) => total + factura.saldoPendiente, 0);
+    const pendienteVigente = mapFacturas
+      .filter((factura) => factura.estadoVencimiento === "Factura Vigente")
+      .reduce((total, factura) => total + factura.saldoPendiente, 0);
+    const pendienteVencido = mapFacturas
+      .filter((factura) => factura.estadoVencimiento === "Factura Vencida")
+      .reduce((total, factura) => total + factura.saldoPendiente, 0);
+
+    return {
+      carteraTotal: montoCobrado + montoPendiente,
+      montoCobrado,
+      montoPendiente,
+      pendienteVigente,
+      pendienteVencido
+    };
+  }, [mapFacturas]);
+
+  const cashQuality = useMemo(() => {
+    let cobradoEnPlazo = 0;
+    let cobradoFueraPlazo = 0;
+
+    mapFacturas.forEach((factura) => {
+      factura.pagos.forEach((pago) => {
+        if (pago.fechaPago <= factura.fechaVencimiento) {
+          cobradoEnPlazo += pago.monto;
+        } else {
+          cobradoFueraPlazo += pago.monto;
+        }
+      });
+    });
+
+    return {
+      cobradoEnPlazo,
+      cobradoFueraPlazo,
+      pendienteEnPlazo: mapKpis.pendienteVigente,
+      pendienteFueraPlazo: mapKpis.pendienteVencido
+    };
+  }, [mapFacturas, mapKpis.pendienteVencido, mapKpis.pendienteVigente]);
+
   const cashBars = [
     {
       key: "cobrado" as const,
       label: "Monto cobrado",
-      value: kpis.montoCobrado,
+      value: mapKpis.montoCobrado,
       caption: "Efectivo recuperado",
       bar: "bg-emerald-500",
-      text: "text-emerald-600 dark:text-emerald-400"
+      text: "text-emerald-600 dark:text-emerald-400",
+      segments: [
+        {
+          label: "En plazo",
+          value: cashQuality.cobradoEnPlazo,
+          bar: "bg-emerald-500",
+          text: "text-emerald-600 dark:text-emerald-400"
+        },
+        {
+          label: "Fuera de plazo",
+          value: cashQuality.cobradoFueraPlazo,
+          bar: "bg-emerald-800",
+          text: "text-emerald-800 dark:text-emerald-300"
+        }
+      ]
     },
     {
       key: "pendiente" as const,
       label: "Monto pendiente",
-      value: kpis.montoPendiente,
+      value: mapKpis.montoPendiente,
       caption: "Saldo por gestionar",
       bar: "bg-orange-500",
-      text: "text-orange-600 dark:text-orange-400"
+      text: "text-orange-600 dark:text-orange-400",
+      segments: [
+        {
+          label: "En plazo",
+          value: cashQuality.pendienteEnPlazo,
+          bar: "bg-orange-400",
+          text: "text-orange-600 dark:text-orange-400"
+        },
+        {
+          label: "Fuera de plazo",
+          value: cashQuality.pendienteFueraPlazo,
+          bar: "bg-rose-500",
+          text: "text-rose-600 dark:text-rose-400"
+        }
+      ]
     }
   ];
   const maxCashBarValue = Math.max(...cashBars.map((item) => item.value), 1);
   const activeCashBar = cashBars.find((item) => item.key === activeCashKey) ?? cashBars[0];
-  const cashTicks = [1, 0.75, 0.5, 0.25, 0].map((ratio) => Math.round(maxCashBarValue * ratio));
+  const totalCashTicks = [1, 0.75, 0.5, 0.25, 0].map((ratio) => Math.round(mapKpis.carteraTotal * ratio));
   const cashStory =
-    kpis.montoCobrado >= kpis.montoPendiente
-      ? "La cartera muestra mayor recuperación que saldo pendiente."
-      : "El saldo pendiente supera lo cobrado y requiere foco de gestión.";
+    mapKpis.montoCobrado >= mapKpis.montoPendiente
+      ? `${formatCurrency(cashQuality.cobradoEnPlazo)} se recuperó en plazo; revisar ${formatCurrency(cashQuality.cobradoFueraPlazo)} cobrados fuera de plazo.`
+      : `${formatCurrency(cashQuality.pendienteFueraPlazo)} está fuera de plazo; el pendiente supera lo cobrado y requiere foco de gestión.`;
 
   const paymentStates = useMemo(
     () => [
       {
+        key: "cobrado" as const,
+        label: "Cobrado",
+        value: mapKpis.montoCobrado,
+        count: mapFacturas.filter((factura) => factura.montoCobrado > 0).length,
+        color: "#10b981",
+        caption: "recuperado",
+        href: "/facturas"
+      },
+      {
         key: "vigente" as const,
         label: "Vigente",
-        value: facturas
-          .filter((factura) => factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0)
-          .reduce((total, factura) => total + factura.saldoPendiente, 0),
-        count: facturas.filter((factura) => factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0).length,
+        value: mapKpis.pendienteVigente,
+        count: mapFacturas.filter((factura) => factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0).length,
         color: "#f97316",
-        caption: "seguimiento",
+        caption: "por cobrar",
         href: "/facturas?filtro=Por%20vencer"
       },
       {
-        key: "vencida" as const,
-        label: "Vencida",
-        value: facturas
-          .filter((factura) => factura.estadoVencimiento === "Factura Vencida" && factura.saldoPendiente > 0)
-          .reduce((total, factura) => total + factura.saldoPendiente, 0),
-        count: facturas.filter((factura) => factura.estadoVencimiento === "Factura Vencida" && factura.saldoPendiente > 0).length,
+        key: "vencido" as const,
+        label: "Vencido",
+        value: mapKpis.pendienteVencido,
+        count: mapFacturas.filter((factura) => factura.estadoVencimiento === "Factura Vencida" && factura.saldoPendiente > 0).length,
         color: "#e11d48",
         caption: "acción prioritaria",
         href: "/facturas?filtro=Vencidas"
-      },
-      {
-        key: "pagada" as const,
-        label: "Pagada",
-        value: facturas
-          .filter((factura) => factura.estadoPago === "Pagado Completamente")
-          .reduce((total, factura) => total + factura.montoCobrado, 0),
-        count: facturas.filter((factura) => factura.estadoPago === "Pagado Completamente").length,
-        color: "#10b981",
-        caption: "recuperado",
-        href: "/facturas?filtro=Pagadas%20completamente"
       }
     ],
-    [facturas]
+    [mapFacturas, mapKpis.montoCobrado, mapKpis.pendienteVencido, mapKpis.pendienteVigente]
   );
   const pieBackground = useMemo(() => {
     let cursor = 0;
     const segments = paymentStates.map((state) => {
       const start = cursor;
-      const size = (state.value / Math.max(kpis.carteraTotal, 1)) * 100;
+      const size = (state.value / Math.max(mapKpis.carteraTotal, 1)) * 100;
       cursor += size;
       return `${state.color} ${start}% ${cursor}%`;
     });
-    return `conic-gradient(${segments.join(", ")}, #e7e5e4 ${cursor}% 100%)`;
-  }, [kpis.carteraTotal, paymentStates]);
+    return `conic-gradient(${segments.join(", ")})`;
+  }, [mapKpis.carteraTotal, paymentStates]);
   const activePaymentState = paymentStates.find((state) => state.key === activePaymentKey) ?? paymentStates[0];
   const dominantPaymentState = [...paymentStates].sort((a, b) => b.value - a.value)[0];
 
   const paymentTimeline = useMemo(() => {
     let acumulado = 0;
-    return facturas
+    return mapFacturas
       .flatMap((factura) =>
         factura.pagos.map((pago) => ({
           id: pago.id,
@@ -251,7 +324,7 @@ export function DashboardView({
         acumulado += pago.monto;
         return { ...pago, acumulado };
       });
-  }, [facturas]);
+  }, [mapFacturas]);
   const maxTimelineAmount = Math.max(...paymentTimeline.map((item) => item.monto), 1);
   const maxTimelineAccumulated = Math.max(...paymentTimeline.map((item) => item.acumulado), 1);
   const timelinePoints = paymentTimeline
@@ -277,7 +350,7 @@ export function DashboardView({
       return current;
     };
 
-    facturas.forEach((factura) => {
+    mapFacturas.forEach((factura) => {
       ensureMonth(factura.fechaEmision).facturado += factura.montoAjustado;
       factura.pagos.forEach((pago) => {
         ensureMonth(pago.fechaPago).ingresado += pago.monto;
@@ -287,7 +360,7 @@ export function DashboardView({
     return [...grouped.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, item]) => ({ key, ...item }));
-  }, [facturas]);
+  }, [mapFacturas]);
   const maxTrendValue = Math.max(...trendData.flatMap((item) => [item.facturado, item.ingresado]), 1);
   const trendPoint = (value: number, index: number) => {
     const x = trendData.length === 1 ? 210 : 54 + (index / Math.max(trendData.length - 1, 1)) * 336;
@@ -302,7 +375,7 @@ export function DashboardView({
   const activeTrendGap = activeTrend ? activeTrend.facturado - activeTrend.ingresado : 0;
 
   const renderKpiGroup = (group: (typeof kpiGroups)[number], groupIndex: number) => (
-    <div key={group.title} className="space-y-3">
+    <div key={group.title} className="space-y-2">
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-stone-200 dark:bg-stone-800" />
         <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">
@@ -310,7 +383,7 @@ export function DashboardView({
         </h2>
         <span className="h-px flex-1 bg-stone-200 dark:bg-stone-800" />
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {group.cards.map((card, index) => {
           const Icon = card.icon;
 
@@ -325,23 +398,23 @@ export function DashboardView({
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ y: -4 }}
               transition={{ delay: (groupIndex * 3 + index) * 0.04 }}
-              className="overflow-hidden rounded-xl border border-stone-200 bg-white text-stone-950 shadow-[0_12px_28px_rgba(15,23,42,0.07)] transition-shadow hover:shadow-[0_18px_38px_rgba(15,23,42,0.1)] dark:border-stone-700 dark:bg-[#151515] dark:text-white"
+              className="overflow-hidden rounded-xl border border-stone-200 bg-white text-stone-950 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition-shadow hover:shadow-[0_14px_30px_rgba(15,23,42,0.09)] dark:border-stone-700 dark:bg-[#151515] dark:text-white"
             >
               <div className={`h-1 bg-gradient-to-r ${card.accent}`} />
-              <div className="relative p-6">
-                <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-stone-50/80 to-transparent dark:from-white/[0.025]" />
-                <div className="relative flex items-start justify-between gap-4">
+              <div className="relative p-4">
+                <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-stone-50/80 to-transparent dark:from-white/[0.025]" />
+                <div className="relative flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-lg text-stone-500 dark:text-stone-400">{card.label}</p>
-                    <p className="mt-3 text-3xl font-semibold">
+                    <p className="text-sm text-stone-500 dark:text-stone-400">{card.label}</p>
+                    <p className="mt-2 text-2xl font-semibold">
                       {card.isMoney ? formatCurrency(card.value) : card.value}
                     </p>
                   </div>
-                  <div className={`flex size-12 items-center justify-center rounded-lg border ${card.tone}`}>
-                    <Icon className="size-6" aria-hidden="true" />
+                  <div className={`flex size-10 items-center justify-center rounded-lg border ${card.tone}`}>
+                    <Icon className="size-5" aria-hidden="true" />
                   </div>
                 </div>
-                <div className="relative mt-7 flex items-center gap-3 text-sm">
+                <div className="relative mt-4 flex items-center gap-2 text-xs">
                   <span
                     className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${
                       card.positive
@@ -365,28 +438,6 @@ export function DashboardView({
         })}
       </div>
     </div>
-  );
-
-  const documentMix = useMemo(
-    () => [
-      {
-        label: "33 Factura",
-        count: facturas.filter((factura) => factura.tipoDocumento === "Factura Electrónica 33").length
-      },
-      {
-        label: "34 Factura Exenta",
-        count: facturas.filter((factura) => factura.tipoDocumento === "Factura Exenta Electrónica 34").length
-      },
-      {
-        label: "56 Nota de Débito",
-        count: facturas.reduce((total, factura) => total + factura.notasDebito.length, 0)
-      },
-      {
-        label: "61 Nota de Crédito",
-        count: facturas.reduce((total, factura) => total + factura.notasCredito.length, 0)
-      }
-    ],
-    [facturas]
   );
 
   const clientStats = useMemo(() => {
@@ -440,36 +491,36 @@ export function DashboardView({
         label: "0 a 30 días",
         min: 0,
         max: 30,
-        color: "from-white to-stone-50 dark:from-emerald-950/75 dark:to-stone-900",
+        color: "from-emerald-50 to-emerald-100 dark:from-emerald-950/75 dark:to-stone-900",
         text: "text-stone-950 dark:text-white",
-        border: "border-stone-200 dark:border-stone-700",
+        border: "border-emerald-200 dark:border-emerald-900/70",
         bar: "bg-emerald-500"
       },
       {
         label: "31 a 60 días",
         min: 31,
         max: 60,
-        color: "from-white to-stone-50 dark:from-amber-950/70 dark:to-stone-900",
+        color: "from-amber-50 to-amber-100 dark:from-amber-950/70 dark:to-stone-900",
         text: "text-stone-950 dark:text-white",
-        border: "border-stone-200 dark:border-stone-700",
+        border: "border-amber-200 dark:border-amber-900/70",
         bar: "bg-amber-500"
       },
       {
         label: "61 a 90 días",
         min: 61,
         max: 90,
-        color: "from-white to-stone-50 dark:from-orange-950/75 dark:to-stone-900",
+        color: "from-orange-100 to-orange-200 dark:from-orange-950/75 dark:to-stone-900",
         text: "text-stone-950 dark:text-white",
-        border: "border-stone-200 dark:border-stone-700",
+        border: "border-orange-300 dark:border-orange-900/70",
         bar: "bg-orange-500"
       },
       {
         label: "Más de 90 días",
         min: 91,
         max: Infinity,
-        color: "from-white to-stone-50 dark:from-rose-950/80 dark:to-stone-900",
+        color: "from-rose-100 to-red-200 dark:from-rose-950/80 dark:to-stone-900",
         text: "text-stone-950 dark:text-white",
-        border: "border-stone-200 dark:border-stone-700",
+        border: "border-rose-300 dark:border-rose-900/70",
         bar: "bg-rose-500"
       }
     ];
@@ -510,10 +561,10 @@ export function DashboardView({
           key: "pagado",
           label: "Pagado",
           subLabel: "Completamente",
-          value: facturas
+          value: mapFacturas
             .filter((factura) => factura.estadoPago === "Pagado Completamente")
             .reduce((total, factura) => total + factura.montoAjustado, 0),
-          count: facturas.filter((factura) => factura.estadoPago === "Pagado Completamente").length,
+          count: mapFacturas.filter((factura) => factura.estadoPago === "Pagado Completamente").length,
           level: "Saludable",
           color: "from-emerald-300 to-emerald-500 dark:from-emerald-700 dark:to-emerald-500"
         },
@@ -521,10 +572,10 @@ export function DashboardView({
           key: "parcial",
           label: "Parcial",
           subLabel: "En avance",
-          value: facturas
+          value: mapFacturas
             .filter((factura) => factura.estadoPago === "Pagado Parcialmente")
             .reduce((total, factura) => total + factura.montoAjustado, 0),
-          count: facturas.filter((factura) => factura.estadoPago === "Pagado Parcialmente").length,
+          count: mapFacturas.filter((factura) => factura.estadoPago === "Pagado Parcialmente").length,
           level: "Gestionable",
           color: "from-amber-300 to-orange-500 dark:from-amber-700 dark:to-orange-500"
         },
@@ -532,10 +583,10 @@ export function DashboardView({
           key: "nopagado",
           label: "No pagado",
           subLabel: "Sin avance",
-          value: facturas
+          value: mapFacturas
             .filter((factura) => factura.estadoPago === "No Pagado")
             .reduce((total, factura) => total + factura.montoAjustado, 0),
-          count: facturas.filter((factura) => factura.estadoPago === "No Pagado").length,
+          count: mapFacturas.filter((factura) => factura.estadoPago === "No Pagado").length,
           level: "Prioritario",
           color: "from-rose-300 to-red-500 dark:from-rose-800 dark:to-red-600"
         }
@@ -548,8 +599,8 @@ export function DashboardView({
           key: "cobrado",
           label: "Cobrado",
           subLabel: "Cash-in",
-          value: kpis.montoCobrado,
-          count: facturas.filter((factura) => factura.montoCobrado > 0).length,
+          value: mapKpis.montoCobrado,
+          count: mapFacturas.filter((factura) => factura.montoCobrado > 0).length,
           level: "Entrada",
           color: "from-emerald-300 to-emerald-500 dark:from-emerald-700 dark:to-emerald-500"
         },
@@ -557,8 +608,8 @@ export function DashboardView({
           key: "vigente",
           label: "Pendiente",
           subLabel: "Vigente",
-          value: kpis.pendienteVigente,
-          count: facturas.filter(
+          value: mapKpis.pendienteVigente,
+          count: mapFacturas.filter(
             (factura) =>
               factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0
           ).length,
@@ -569,8 +620,8 @@ export function DashboardView({
           key: "vencido",
           label: "Pendiente",
           subLabel: "Vencido",
-          value: kpis.pendienteVencido,
-          count: facturas.filter(
+          value: mapKpis.pendienteVencido,
+          count: mapFacturas.filter(
             (factura) =>
               factura.estadoVencimiento === "Factura Vencida" && factura.saldoPendiente > 0
           ).length,
@@ -583,7 +634,7 @@ export function DashboardView({
     if (focus === "historico") {
       const grouped = new Map<string, { label: string; value: number; count: number }>();
 
-      facturas.forEach((factura) => {
+      mapFacturas.forEach((factura) => {
         const date = new Date(`${factura.fechaEmision}T00:00:00`);
         const key = `${date.getFullYear()}-${date.getMonth()}`;
         const label = new Intl.DateTimeFormat("es-CL", {
@@ -627,38 +678,37 @@ export function DashboardView({
           "from-rose-300 to-red-500 dark:from-rose-900 dark:to-red-600"
         ][index] ?? bucket.color
     }));
-  }, [agingBuckets, facturas, focus, kpis.montoCobrado, kpis.pendienteVencido, kpis.pendienteVigente]);
+  }, [agingBuckets, focus, mapFacturas, mapKpis.montoCobrado, mapKpis.pendienteVencido, mapKpis.pendienteVigente]);
   const maxChartValue = Math.max(...chartData.map((item) => item.value), 1);
   const activeChartItem = chartData.find((item) => item.key === activeChartKey) ?? chartData[0];
   const focusDescription = {
-    aging: "Agrupa saldos vencidos por tramo de mora con semáforo de urgencia.",
-    estado: "Compara cartera pagada, parcial y sin pago para medir salud de cobro.",
+    estado: "Divide la cartera total entre cobrado, pendiente vigente y pendiente vencido.",
     flujo: "Separa efectivo cobrado, pendiente vigente y pendiente vencido.",
     historico: "Ordena la cartera por periodo de emisión para leer evolución."
   }[focus];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <motion.section
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-xl border border-stone-200 bg-white p-6 text-stone-950 shadow-[0_18px_44px_rgba(15,23,42,0.09)] dark:border-stone-700 dark:bg-[#171717] dark:text-white"
+        className="relative overflow-hidden rounded-xl border border-stone-200 bg-white p-4 text-stone-950 shadow-[0_14px_32px_rgba(15,23,42,0.08)] dark:border-stone-700 dark:bg-[#171717] dark:text-white"
       >
         <div className="pho-hero-texture absolute inset-0 opacity-70" />
         <div className="absolute inset-y-0 left-0 w-1.5 bg-orange-500" />
-        <div className="relative grid gap-8 xl:grid-cols-[1fr_420px]">
+        <div className="relative grid gap-5 xl:grid-cols-[1fr_360px]">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white/80 px-4 py-2 text-sm font-semibold text-orange-600 shadow-sm dark:border-stone-700 dark:bg-black/30 dark:text-orange-400">
+            <div className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-orange-600 shadow-sm dark:border-stone-700 dark:bg-black/30 dark:text-orange-400">
               <Sparkles className="size-4" aria-hidden="true" />
               CxC PHO command center
             </div>
-            <h1 className="mt-7 max-w-4xl text-4xl font-semibold tracking-tight sm:text-[2.85rem] sm:leading-tight">
+            <h1 className="mt-4 max-w-4xl text-3xl font-semibold tracking-tight sm:text-4xl sm:leading-tight">
               Cartera, cobranza y trazabilidad en una sola lectura.
             </h1>
-            <p className="mt-5 max-w-3xl text-lg leading-8 text-stone-600 dark:text-stone-300">
+            <p className="mt-3 max-w-3xl text-base leading-7 text-stone-600 dark:text-stone-300">
               Un tablero vivo para entender qué cobrar, cuándo actuar y qué documentos explican cada movimiento.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-wrap gap-2">
               {[
                 { label: "Cartera", icon: Gauge },
                 { label: "Cobranza", icon: Target },
@@ -668,7 +718,7 @@ export function DashboardView({
                 return (
                   <button
                     key={item.label}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition ${
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
                       index === 0
                         ? "border-orange-500 bg-orange-500 text-white"
                         : "border-stone-200 bg-white/70 text-stone-600 hover:border-orange-300 hover:text-stone-950 dark:border-stone-700 dark:bg-black/20 dark:text-stone-300 dark:hover:border-orange-500/60 dark:hover:text-white"
@@ -682,7 +732,7 @@ export function DashboardView({
             </div>
           </div>
 
-          <div className="rounded-xl border border-stone-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-stone-700 dark:bg-black/24">
+          <div className="rounded-xl border border-stone-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-stone-700 dark:bg-black/24">
             <div className="flex items-start gap-4">
               <div className="flex size-14 items-center justify-center rounded-lg border border-stone-200 bg-white text-orange-600 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
                 <Gauge className="size-6" aria-hidden="true" />
@@ -716,37 +766,88 @@ export function DashboardView({
           transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
         >
           {[
-            "Factura 2976 vence en 3 días",
-            "Cliente Clínica Andes SpA posee 105 días de atraso",
-            "Cliente María Fernanda Ruiz posee 95% de pagos puntuales",
-            "Factura 3010 fue pagada en fecha"
-          ].map((message) => (
-            <span key={message} className="flex items-center gap-5">
-              <span>{message}</span>
-              <span className="size-2 rounded-full bg-amber-400" />
+            {
+              label: "Pago parcial",
+              prefix: "Factura 2976 registra abono y vence en",
+              metric: "3 días",
+              suffix: "",
+              tone: "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-950/45 dark:text-amber-300 dark:ring-amber-800",
+              accent: "text-amber-700 dark:text-amber-300"
+            },
+            {
+              label: "Retraso",
+              prefix: "Cliente Clínica Andes SpA posee",
+              metric: "105 días",
+              suffix: "de atraso",
+              tone: "bg-rose-100 text-rose-700 ring-rose-200 dark:bg-rose-950/45 dark:text-rose-300 dark:ring-rose-800",
+              accent: "text-rose-700 dark:text-rose-300"
+            },
+            {
+              label: "Pago",
+              prefix: "Cliente María Fernanda Ruiz posee",
+              metric: "95%",
+              suffix: "de pagos puntuales",
+              tone: "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-300 dark:ring-emerald-800",
+              accent: "text-emerald-700 dark:text-emerald-300"
+            },
+            {
+              label: "Pago",
+              prefix: "Factura 3010 fue pagada en fecha",
+              metric: "",
+              suffix: "",
+              tone: "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-300 dark:ring-emerald-800",
+              accent: "text-emerald-700 dark:text-emerald-300"
+            }
+          ].map((alert) => (
+            <span key={`${alert.label}-${alert.prefix}`} className="flex items-stretch overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm dark:border-stone-700 dark:bg-black/35">
+              <span className={`flex items-center px-3 text-xs font-semibold ring-1 ${alert.tone}`}>
+                {alert.label}
+              </span>
+              <span className="px-3 py-1">
+                {alert.prefix}
+                {alert.metric ? (
+                  <>
+                    {" "}
+                    <strong className={`font-semibold ${alert.accent}`}>{alert.metric}</strong>
+                  </>
+                ) : null}
+                {alert.suffix ? ` ${alert.suffix}` : ""}
+              </span>
             </span>
           ))}
         </motion.div>
       </div>
 
-      <section className="space-y-5">{renderKpiGroup(kpiGroups[0], 0)}</section>
+      <section className="space-y-3">{renderKpiGroup(kpiGroups[0], 0)}</section>
 
-      <section className="space-y-5">{renderKpiGroup(kpiGroups[1], 1)}</section>
+      <section className="space-y-3">{renderKpiGroup(kpiGroups[1], 1)}</section>
 
-      <section className="grid gap-4 xl:grid-cols-[1fr_0.55fr]">
-        <div className={darkPanelClass("p-6")}>
+      <section className="relative space-y-4 overflow-hidden rounded-2xl border border-orange-100 bg-orange-50/35 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] dark:border-orange-500/20 dark:bg-orange-500/[0.04]">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500 via-amber-300 to-transparent" />
+        <div className="relative flex items-center gap-3">
+          <span className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-orange-600 shadow-sm ring-1 ring-orange-200 dark:bg-black/35 dark:text-orange-300 dark:ring-orange-500/30">
+            01 · Cobranza
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">Lectura financiera y mora</h2>
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              Mapa financiero, pulso de cobranza y tramos de vencimiento para priorizar gestión.
+            </p>
+          </div>
+        </div>
+        <div className="space-y-5">
+        <div className={darkPanelClass("p-4")}>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="max-w-xl">
-              <h2 className="text-xl font-semibold">Mapa financiero interactivo</h2>
-              <p className="mt-1 text-stone-500 dark:text-stone-400">
-                Cambia el lente para leer flujo, estado, histórico o riesgo de cartera.
+              <h2 className="text-lg font-semibold">Mapa financiero interactivo</h2>
+              <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+                Cambia el lente para leer flujo, estado o histórico de cartera.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-1 rounded-lg border border-stone-200 bg-stone-50 p-1 sm:grid-cols-4 dark:border-stone-700 dark:bg-black/45">
+            <div className="grid grid-cols-3 gap-1 rounded-lg border border-stone-200 bg-stone-50 p-1 dark:border-stone-700 dark:bg-black/45">
               {[
-                { key: "aging", label: "Aging", icon: Layers3 },
-                { key: "estado", label: "Estado", icon: Activity },
                 { key: "flujo", label: "Flujo", icon: BarChart3 },
+                { key: "estado", label: "Estado", icon: Activity },
                 { key: "historico", label: "Histórico", icon: LineChart }
               ].map((item) => {
                 const Icon = item.icon;
@@ -756,7 +857,7 @@ export function DashboardView({
                   key={item.key}
                   type="button"
                   onClick={() => setFocus(item.key as typeof focus)}
-                  className={`inline-flex min-w-28 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition ${
+                  className={`inline-flex min-w-24 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm font-semibold transition ${
                     focus === item.key
                       ? "bg-orange-500 text-white shadow-sm"
                       : "text-stone-500 hover:text-stone-950 dark:text-stone-400 dark:hover:text-white"
@@ -770,33 +871,37 @@ export function DashboardView({
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-black/35">
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {["Todo", "30 días", "60 días", "90 días", "Manual"].map((label, index) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setActivePeriod(label)}
-                    className={`inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm font-semibold ${
-                      activePeriod === label || (index === 0 && activePeriod === "Todo")
-                        ? "border-orange-300 bg-white text-orange-600 shadow-sm dark:bg-stone-950"
-                        : "border-stone-200 bg-white text-stone-500 transition hover:border-orange-200 hover:text-orange-600 dark:border-stone-800 dark:bg-stone-900"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+          <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-2.5 dark:border-stone-700 dark:bg-black/35">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-stone-700 dark:text-stone-200">Periodo de lectura</p>
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  Filtra el mapa por fecha de emisión del documento.
+                </p>
               </div>
-              <div className="grid gap-2 text-sm text-stone-500 sm:grid-cols-2 dark:text-stone-400">
-                <span className="inline-flex items-center justify-between gap-3 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-2 dark:border-stone-800 dark:bg-stone-900">
-                  Desde <strong className="text-stone-950 dark:text-white">01-01-2026</strong>
-                  <CalendarClock className="size-4 text-stone-500" aria-hidden="true" />
-                </span>
-                <span className="inline-flex items-center justify-between gap-3 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-2 dark:border-stone-800 dark:bg-stone-900">
-                  Hasta <strong className="text-stone-950 dark:text-white">30-06-2026</strong>
-                  <CalendarClock className="size-4 text-stone-500" aria-hidden="true" />
-                </span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-500 shadow-sm dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400">
+                  Desde
+                  <input
+                    type="date"
+                    value={mapStartDate}
+                    max={mapEndDate}
+                    onChange={(event) => setMapStartDate(event.target.value)}
+                    className="min-w-36 bg-transparent font-semibold text-stone-950 outline-none dark:text-white"
+                  />
+                  <CalendarClock className="size-4 text-stone-400" aria-hidden="true" />
+                </label>
+                <label className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-500 shadow-sm dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400">
+                  Hasta
+                  <input
+                    type="date"
+                    value={mapEndDate}
+                    min={mapStartDate}
+                    onChange={(event) => setMapEndDate(event.target.value)}
+                    className="min-w-36 bg-transparent font-semibold text-stone-950 outline-none dark:text-white"
+                  />
+                  <CalendarClock className="size-4 text-stone-400" aria-hidden="true" />
+                </label>
               </div>
             </div>
           </div>
@@ -807,7 +912,7 @@ export function DashboardView({
               key="flujo-chart"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border border-stone-200 bg-stone-50 p-5 dark:border-stone-700 dark:bg-black/35"
+              className="rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-black/35"
             >
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -816,7 +921,7 @@ export function DashboardView({
                     {cashStory}
                   </p>
                 </div>
-                <div className="rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm dark:border-stone-800 dark:bg-stone-950">
+                <div className="rounded-lg border border-stone-200 bg-white px-3 py-2 shadow-sm dark:border-stone-800 dark:bg-stone-950">
                   <p className="text-xs uppercase tracking-[0.16em] text-stone-500 dark:text-stone-400">
                     Lectura activa
                   </p>
@@ -826,24 +931,57 @@ export function DashboardView({
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_240px]">
+              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_280px]">
                 <div className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-950">
-                  <div className="grid h-72 grid-cols-[76px_1fr] gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-semibold text-stone-700 dark:text-stone-200">
+                      Comparación por calidad del flujo
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs text-stone-500 dark:text-stone-400">
+                      {[
+                        ["Cobrado en plazo", "bg-emerald-500"],
+                        ["Cobrado fuera plazo", "bg-emerald-800"],
+                        ["Pendiente en plazo", "bg-orange-400"],
+                        ["Pendiente vencido", "bg-rose-500"]
+                      ].map(([label, color]) => (
+                        <span key={label} className="inline-flex items-center gap-1.5">
+                          <span className={`size-2 rounded-sm ${color}`} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-5 grid h-64 grid-cols-[72px_1fr] gap-3">
                     <div className="flex flex-col justify-between py-3 text-right text-xs text-stone-500 dark:text-stone-400">
-                      {cashTicks.map((tick) => (
+                      {totalCashTicks.map((tick) => (
                         <span key={tick}>{compactCurrency(tick)}</span>
                       ))}
                     </div>
-                    <div className="relative border-b border-l border-stone-300 px-6 pb-8 pt-3 dark:border-stone-800">
-                      <div className="absolute inset-x-6 top-3 grid h-[calc(100%-44px)] grid-rows-4">
+                    <div className="relative border-b border-l border-stone-300 px-4 pb-8 pt-3 dark:border-stone-800">
+                      <div className="absolute inset-x-4 top-3 grid h-[calc(100%-44px)] grid-rows-4">
                         {[0, 1, 2, 3].map((line) => (
                           <span key={line} className="border-t border-dashed border-stone-200 dark:border-stone-800" />
                         ))}
                       </div>
-                      <div className="relative flex h-full items-end justify-center gap-10">
+                      <div className="relative grid h-full grid-cols-3 items-end gap-4">
+                        <div className="flex h-full flex-col items-center justify-end gap-2 text-center">
+                          <span className="rounded-md bg-stone-100 px-2 py-1 text-xs font-semibold text-stone-600 shadow-sm dark:bg-stone-900 dark:text-stone-300">
+                            100% cartera
+                          </span>
+                          <motion.div
+                            className="w-full max-w-24 rounded-t-xl bg-gradient-to-t from-stone-300 to-stone-100 shadow-[0_-10px_22px_rgba(15,23,42,0.08)] dark:from-stone-700 dark:to-stone-500"
+                            initial={{ height: 0 }}
+                            animate={{ height: "100%" }}
+                            transition={{ duration: 0.75 }}
+                          />
+                          <div className="min-h-12">
+                            <p className="number-tabular text-sm font-semibold">{compactCurrency(mapKpis.carteraTotal)}</p>
+                            <p className="text-xs text-stone-500 dark:text-stone-400">Cartera total</p>
+                          </div>
+                        </div>
                         {cashBars.map((item) => {
                           const isActive = activeCashKey === item.key;
-                          const ratio = Math.round((item.value / Math.max(kpis.carteraTotal, 1)) * 100);
+                          const ratio = Math.round((item.value / Math.max(mapKpis.carteraTotal, 1)) * 100);
 
                           return (
                             <button
@@ -851,7 +989,7 @@ export function DashboardView({
                               type="button"
                               onClick={() => setActiveCashKey(item.key)}
                               onMouseEnter={() => setActiveCashKey(item.key)}
-                              className="group flex h-full flex-1 flex-col items-center justify-end gap-3 outline-none"
+                              className="group flex h-full flex-col items-center justify-end gap-2 text-center outline-none"
                             >
                               <span
                                 className={`rounded-md px-2 py-1 text-xs font-semibold shadow-sm ${
@@ -861,14 +999,31 @@ export function DashboardView({
                                 {ratio}% cartera
                               </span>
                               <motion.div
-                                className={`w-full max-w-24 rounded-t-xl ${item.bar} shadow-[0_-14px_28px_rgba(15,23,42,0.12)] transition ${
-                                  isActive ? "ring-2 ring-orange-500 ring-offset-2 dark:ring-offset-black" : "opacity-80 group-hover:opacity-100"
+                                className={`w-full max-w-24 overflow-hidden rounded-t-xl bg-stone-100 shadow-[0_-10px_22px_rgba(15,23,42,0.12)] transition dark:bg-stone-800 ${
+                                  isActive ? "ring-2 ring-orange-500 ring-offset-2 dark:ring-offset-black" : "opacity-85 group-hover:opacity-100"
                                 }`}
                                 initial={{ height: 0 }}
-                                animate={{ height: progressWidth((item.value / maxCashBarValue) * 100) }}
+                                animate={{ height: progressWidth((item.value / Math.max(mapKpis.carteraTotal, 1)) * 100) }}
                                 transition={{ duration: 0.75 }}
-                              />
-                              <div className="min-h-12 text-center">
+                              >
+                                <div className="flex h-full flex-col-reverse">
+                                  {item.segments.map((segment) =>
+                                    segment.value > 0 ? (
+                                      <div
+                                        key={segment.label}
+                                        className={`${segment.bar} relative flex min-h-8 items-center justify-center`}
+                                        style={{ height: progressWidth((segment.value / Math.max(item.value, 1)) * 100) }}
+                                        title={`${segment.label}: ${formatCurrency(segment.value)}`}
+                                      >
+                                        <span className="number-tabular text-[11px] font-semibold text-white drop-shadow-sm">
+                                          {Math.round((segment.value / Math.max(item.value, 1)) * 100)}%
+                                        </span>
+                                      </div>
+                                    ) : null
+                                  )}
+                                </div>
+                              </motion.div>
+                              <div className="min-h-12">
                                 <p className="number-tabular text-sm font-semibold">{compactCurrency(item.value)}</p>
                                 <p className="text-xs text-stone-500 dark:text-stone-400">{item.label}</p>
                               </div>
@@ -886,20 +1041,30 @@ export function DashboardView({
                       key={item.key}
                       type="button"
                       onClick={() => setActiveCashKey(item.key)}
-                      className={`rounded-lg border p-4 text-left transition ${
+                      className={`rounded-lg border p-3 text-left transition ${
                         activeCashKey === item.key
                           ? "border-orange-300 bg-white shadow-md dark:border-orange-500/40 dark:bg-stone-950"
                           : "border-stone-200 bg-white/70 hover:bg-white dark:border-stone-800 dark:bg-stone-950/70"
                       }`}
                     >
                       <p className="text-sm text-stone-500 dark:text-stone-400">{item.caption}</p>
-                      <p className={`mt-2 number-tabular text-xl font-semibold ${item.text}`}>{formatCurrency(item.value)}</p>
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
-                        <motion.div
-                          className={`h-full rounded-full ${item.bar}`}
-                          initial={{ width: 0 }}
-                          animate={{ width: progressWidth((item.value / Math.max(kpis.carteraTotal, 1)) * 100) }}
-                        />
+                      <p className={`mt-1 number-tabular text-lg font-semibold ${item.text}`}>{formatCurrency(item.value)}</p>
+                      <div className="mt-4 space-y-2.5">
+                        {item.segments.map((segment) => (
+                          <div key={segment.label}>
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="text-stone-500 dark:text-stone-400">{segment.label}</span>
+                              <span className={`number-tabular font-semibold ${segment.text}`}>{formatCurrency(segment.value)}</span>
+                            </div>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+                              <motion.div
+                                className={`h-full rounded-full ${segment.bar}`}
+                                initial={{ width: 0 }}
+                                animate={{ width: progressWidth((segment.value / Math.max(item.value, 1)) * 100) }}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </button>
                   ))}
@@ -913,23 +1078,23 @@ export function DashboardView({
               key="estado-chart"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl border border-stone-200 bg-white p-5 dark:border-stone-700 dark:bg-black/35"
+              className="rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-black/35"
             >
-              <h3 className="font-semibold">Estado de vencimiento de la cartera</h3>
+              <h3 className="font-semibold">Composición de la cartera total</h3>
               <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-                Estado dominante: {dominantPaymentState.label} concentra{" "}
-                {Math.round((dominantPaymentState.value / Math.max(kpis.carteraTotal, 1)) * 100)}% de la cartera.
+                Segmenta la cartera en cobrado, pendiente vigente y pendiente vencido. Foco actual: {dominantPaymentState.label} concentra{" "}
+                {Math.round((dominantPaymentState.value / Math.max(mapKpis.carteraTotal, 1)) * 100)}% de la cartera.
               </p>
-              <div className="mt-6 grid gap-6 lg:grid-cols-[260px_1fr] lg:items-center">
+              <div className="mt-4 grid gap-4 lg:grid-cols-[190px_1fr] lg:items-center">
                 <button
                   type="button"
-                  className="relative mx-auto flex size-60 items-center justify-center rounded-full shadow-[0_18px_38px_rgba(15,23,42,0.12)] outline-none"
+                  className="relative mx-auto flex size-44 items-center justify-center rounded-full shadow-[0_14px_28px_rgba(15,23,42,0.12)] outline-none"
                   style={{ background: pieBackground }}
-                  aria-label="Gráfico de torta de estados de pago"
+                  aria-label="Gráfico de torta de composición de cartera"
                 >
-                  <span className="flex size-36 flex-col items-center justify-center rounded-full bg-white text-center shadow-sm dark:bg-stone-950">
-                    <span className="text-3xl font-semibold">
-                      {Math.round((activePaymentState.value / Math.max(kpis.carteraTotal, 1)) * 100)}%
+                  <span className="flex size-28 flex-col items-center justify-center rounded-full bg-white text-center shadow-sm dark:bg-stone-950">
+                    <span className="text-2xl font-semibold">
+                      {Math.round((activePaymentState.value / Math.max(mapKpis.carteraTotal, 1)) * 100)}%
                     </span>
                     <span className="text-xs text-stone-500 dark:text-stone-400">{activePaymentState.label}</span>
                     <span className="mt-1 number-tabular text-xs font-semibold text-stone-600 dark:text-stone-300">
@@ -956,7 +1121,7 @@ export function DashboardView({
                           {state.label}
                         </span>
                         <span className="number-tabular text-sm font-semibold">
-                          {Math.round((state.value / Math.max(kpis.carteraTotal, 1)) * 100)}%
+                          {Math.round((state.value / Math.max(mapKpis.carteraTotal, 1)) * 100)}%
                         </span>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-3 text-sm">
@@ -968,7 +1133,7 @@ export function DashboardView({
                           className="h-full rounded-full"
                           style={{ backgroundColor: state.color }}
                           initial={{ width: 0 }}
-                          animate={{ width: progressWidth((state.value / Math.max(kpis.carteraTotal, 1)) * 100) }}
+                          animate={{ width: progressWidth((state.value / Math.max(mapKpis.carteraTotal, 1)) * 100) }}
                         />
                       </div>
                     </Link>
@@ -983,7 +1148,7 @@ export function DashboardView({
             key="historico-chart"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl border border-stone-200 bg-white p-5 dark:border-stone-700 dark:bg-black/35"
+            className="rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-black/35"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -994,32 +1159,32 @@ export function DashboardView({
               </div>
               <div className="grid gap-2 text-right">
                 <p className="number-tabular text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                  {activeTrend ? formatCurrency(activeTrend.ingresado) : formatCurrency(kpis.montoCobrado)}
+                  {activeTrend ? formatCurrency(activeTrend.ingresado) : formatCurrency(mapKpis.montoCobrado)}
                 </p>
                 <p className="text-xs text-stone-500 dark:text-stone-400">
                   {activeTrend ? `Brecha ${activeTrend.label}: ${compactCurrency(activeTrendGap)}` : "Sin movimiento activo"}
                 </p>
               </div>
             </div>
-            <div className="mt-5 rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-800 dark:bg-stone-950">
+              <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3 dark:border-stone-800 dark:bg-stone-950">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
+                  <span className="inline-flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
                     <span className="size-2.5 rounded-full bg-orange-500" />
                     Histórico facturado
                   </span>
-                  <span className="inline-flex items-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
+                  <span className="inline-flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
                     <span className="size-2.5 rounded-full bg-emerald-500" />
                     Histórico ingresado
                   </span>
                 </div>
-                <span className="rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-500 dark:border-stone-800 dark:bg-stone-900">
+                <span className="rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-500 dark:border-stone-800 dark:bg-stone-900">
                   {activeTrend
                     ? `${activeTrend.label}: facturado ${compactCurrency(activeTrend.facturado)} · ingresado ${compactCurrency(activeTrend.ingresado)}`
                     : "Facturado por emisión · ingresado por fecha de pago"}
                 </span>
               </div>
-              <svg viewBox="0 0 420 230" className="h-80 w-full overflow-visible">
+              <svg viewBox="0 0 420 230" className="h-56 w-full overflow-visible">
                 {[46, 79, 112, 145, 178].map((y) => (
                   <line
                     key={y}
@@ -1199,151 +1364,222 @@ export function DashboardView({
           </motion.div>
           )}
 
-          {focus === "aging" && (
-          <motion.div
-            key="aging-chart"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl border border-stone-200 bg-white p-5 dark:border-stone-700 dark:bg-black/35"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="font-semibold">Aging de mora</h3>
-                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-                  Barras por días vencidos para priorizar la gestión.
-                </p>
-              </div>
-              <div className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 text-right shadow-sm dark:border-stone-800 dark:bg-stone-950">
-                <p className="number-tabular text-lg font-semibold text-rose-600 dark:text-rose-400">
-                  {formatCurrency(activeAgingBucket?.monto ?? kpis.pendienteVencido)}
-                </p>
-                <p className="text-xs text-stone-500 dark:text-stone-400">
-                  {activeAgingBucket ? `${activeAgingBucket.label} · ${activeAgingBucket.count} docs` : "Foco de mora"}
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-950">
-              <div className="grid h-80 grid-cols-[84px_1fr] gap-4">
-                <div className="flex flex-col justify-between py-4 text-right text-xs text-stone-500 dark:text-stone-400">
-                  {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
-                    <span key={ratio}>{compactCurrency(maxBucket * ratio)}</span>
-                  ))}
-                </div>
-                <div className="relative border-b border-l border-stone-300 px-5 pb-8 pt-4 dark:border-stone-800">
-                  <div className="absolute inset-x-5 top-4 grid h-[calc(100%-48px)] grid-rows-4">
-                    {[0, 1, 2, 3].map((line) => (
-                      <span key={line} className="border-t border-dashed border-stone-200 dark:border-stone-800" />
-                    ))}
-                  </div>
-                  <div className="relative grid h-full items-end gap-4" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
-                    {agingBuckets.map((bucket, index) => {
-                      const riskLabel = ["Bajo", "Medio", "Alto", "Crítico"][index];
-                      const isActive = activeAgingBucket?.label === bucket.label;
-
-                      return (
-                        <button
-                          key={bucket.label}
-                          type="button"
-                          onClick={() => setActiveAgingKey(bucket.label)}
-                          onMouseEnter={() => setActiveAgingKey(bucket.label)}
-                          className="group flex h-full flex-col items-center justify-end gap-3 text-center outline-none"
-                        >
-                          <span
-                            className={`rounded-md px-3 py-1 text-xs font-semibold shadow-sm transition ${
-                              isActive
-                                ? "bg-orange-500 text-white"
-                                : "bg-white text-orange-600 group-hover:bg-orange-50 dark:bg-stone-900"
-                            }`}
-                          >
-                            {riskLabel}
-                          </span>
-                          <motion.div
-                            className={`w-full max-w-28 rounded-t-xl ${bucket.bar} shadow-[0_-12px_26px_rgba(15,23,42,0.12)] transition ${
-                              isActive ? "ring-2 ring-orange-500 ring-offset-2 ring-offset-white dark:ring-offset-stone-950" : "opacity-80 group-hover:opacity-100"
-                            }`}
-                            initial={{ height: 0 }}
-                            animate={{ height: progressWidth((bucket.monto / maxBucket) * 100) }}
-                            transition={{ duration: 0.7, delay: index * 0.08 }}
-                          />
-                          <div className="min-h-14">
-                            <p className="number-tabular text-sm font-semibold">{compactCurrency(bucket.monto)}</p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">{bucket.label}</p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">{bucket.count} docs</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-          )}
         </div>
         </div>
 
-        <div className={darkPanelClass("relative overflow-hidden p-6")}>
+        <div className={darkPanelClass("relative overflow-hidden p-4")}>
           <div className="absolute inset-y-0 left-0 w-1 bg-orange-500" />
-          <div className="relative">
-            <h2 className="text-xl font-semibold">Pulso de cobranza</h2>
-            <div className="mx-auto mt-8 flex size-56 flex-col items-center justify-center rounded-xl border border-stone-200 bg-white shadow-inner dark:border-stone-700 dark:bg-black/45">
-              <div className="flex size-36 flex-col items-center justify-center rounded-xl border border-orange-500/45">
-                <p className="text-stone-500 dark:text-stone-400">recuperación</p>
-                <p className="mt-2 text-5xl font-semibold">{recovery}%</p>
-                <div className="mt-5 h-2 w-24 overflow-hidden rounded-full bg-stone-800">
-                  <motion.div
-                    className="h-full rounded-full bg-orange-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: progressWidth(recovery) }}
-                  />
+          <div className="relative space-y-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <h2 className="text-lg font-semibold">Pulso de cobranza</h2>
+              <p className="text-sm text-stone-500 dark:text-stone-400">
+                Señales rápidas para medir recuperación, mora y cierres pendientes.
+              </p>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-[240px_1fr]">
+              <div className="flex min-h-36 items-center justify-between gap-4 rounded-lg border border-stone-200 bg-white p-4 shadow-sm dark:border-stone-700 dark:bg-black/45 xl:flex-col xl:justify-center">
+                <div className="flex size-28 shrink-0 flex-col items-center justify-center rounded-xl border border-orange-500/45">
+                  <p className="text-xs text-stone-500 dark:text-stone-400">recuperación</p>
+                  <p className="mt-1 text-4xl font-semibold">{recovery}%</p>
+                  <div className="mt-3 h-2 w-20 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+                    <motion.div
+                      className="h-full rounded-full bg-orange-500"
+                      initial={{ width: 0 }}
+                      animate={{ width: progressWidth(recovery) }}
+                    />
+                  </div>
+                </div>
+                <div className="min-w-0 text-right xl:text-center">
+                  <p className="text-xs uppercase tracking-[0.16em] text-stone-500 dark:text-stone-400">lectura</p>
+                  <p className="mt-1 text-sm font-semibold text-stone-950 dark:text-white">
+                    {recovery >= 50 ? "Cobranza saludable" : "Requiere foco de gestión"}
+                  </p>
+                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                    {formatCurrency(kpis.montoCobrado)} recuperados
+                  </p>
                 </div>
               </div>
-            </div>
-            <div className="mt-7 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {[
-                ["Eficiencia de cobro", `${recovery}%`, `${formatCurrency(kpis.montoCobrado)} recuperados sobre cartera activa.`, "text-emerald-400"],
-                ["Mora sobre pendiente", `${mora}%`, "Indica cuánto del saldo requiere gestión prioritaria.", "text-rose-500"],
-                ["Pagos parciales", `${partialCount}`, "Documentos con avance de pago que pueden cerrarse pronto.", "text-orange-500"],
-                ["Reemplazos documentales", `${facturas.filter((factura) => factura.documentosRelacionados?.length).length}`, "Facturas relacionadas por corrección y reemplazo.", "text-violet-400"]
-              ].map(([label, value, detail, color]) => (
-                <div key={label} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm dark:border-stone-700 dark:bg-black/45">
+                {
+                  label: "Eficiencia de cobro",
+                  value: `${recovery}%`,
+                  detail: `${formatCurrency(kpis.montoCobrado)} recuperados sobre cartera activa.`,
+                  color: "text-emerald-500",
+                  bar: "bg-emerald-500",
+                  progress: recovery
+                },
+                {
+                  label: "Mora sobre pendiente",
+                  value: `${mora}%`,
+                  detail: "Indica cuánto del saldo requiere gestión prioritaria.",
+                  color: "text-rose-500",
+                  bar: "bg-rose-500",
+                  progress: mora
+                },
+                {
+                  label: "Pagos parciales",
+                  value: `${partialCount}`,
+                  detail: "Documentos con avance de pago que pueden cerrarse pronto.",
+                  color: "text-orange-500",
+                  bar: "bg-orange-500",
+                  progress: Math.min(partialCount * 25, 100)
+                },
+                {
+                  label: "Reemplazos documentales",
+                  value: `${facturas.filter((factura) => factura.documentosRelacionados?.length).length}`,
+                  detail: "Facturas relacionadas por corrección y reemplazo.",
+                  color: "text-violet-500",
+                  bar: "bg-violet-500",
+                  progress: Math.min(facturas.filter((factura) => factura.documentosRelacionados?.length).length * 25, 100)
+                }
+              ].map((metric) => (
+                <div key={metric.label} className="flex min-h-36 flex-col justify-between rounded-lg border border-stone-200 bg-white p-3 shadow-sm dark:border-stone-700 dark:bg-black/45">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold">{label}</p>
-                    <p className={`text-lg ${color}`}>{value}</p>
+                    <p className="font-semibold">{metric.label}</p>
+                    <p className={`text-lg ${metric.color}`}>{metric.value}</p>
                   </div>
-                  <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">{detail}</p>
+                  <p className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{metric.detail}</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+                    <motion.div
+                      className={`h-full rounded-full ${metric.bar}`}
+                      initial={{ width: 0 }}
+                      animate={{ width: progressWidth(metric.progress) }}
+                    />
+                  </div>
                 </div>
               ))}
+              </div>
             </div>
+          </div>
+        </div>
+        </div>
+
+        <div className={darkPanelClass("p-4")}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Heatmap de mora</h2>
+              <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+                Color más intenso indica mayor antigüedad y urgencia de cobranza.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-xs font-semibold text-stone-600 dark:text-stone-300">
+              {[
+                ["Bajo", "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-900"],
+                ["Medio", "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900"],
+                ["Alto", "bg-orange-100 text-orange-700 ring-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:ring-orange-900"],
+                ["Crítico", "bg-rose-100 text-rose-700 ring-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:ring-rose-900"]
+              ].map(([label, classes]) => (
+                <span key={label} className={`rounded-md px-2 py-1 ring-1 ${classes}`}>
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {agingBuckets.map((bucket, index) => {
+              const isActive = activeAgingBucket?.label === bucket.label;
+              const riskLabel = ["Bajo", "Medio", "Alto", "Crítico"][index];
+
+              return (
+              <button
+                key={bucket.label}
+                type="button"
+                onClick={() => setActiveAgingKey(bucket.label)}
+                onMouseEnter={() => setActiveAgingKey(bucket.label)}
+                className={`rounded-lg border bg-gradient-to-br ${bucket.color} ${bucket.text} ${bucket.border} p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition ${
+                  isActive ? "ring-2 ring-orange-500 ring-offset-2 ring-offset-white dark:ring-offset-stone-950" : "hover:-translate-y-0.5 hover:shadow-lg"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-base font-semibold">{bucket.label}</p>
+                    <p className="mt-0.5 text-xs font-semibold uppercase tracking-[0.14em] text-stone-500 dark:text-stone-400">
+                      Riesgo {riskLabel}
+                    </p>
+                  </div>
+                  <span className="rounded-md bg-white/80 px-3 py-1 text-sm font-semibold text-stone-950 shadow-sm dark:bg-black/55 dark:text-white">
+                    {bucket.count} docs
+                  </span>
+                </div>
+                <p className="mt-4 text-xl font-semibold">{formatCurrency(bucket.monto)}</p>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/75 dark:bg-black/45">
+                  <motion.div
+                    className={`h-full rounded-full ${bucket.bar}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: progressWidth((bucket.monto / maxBucket) * 100) }}
+                  />
+                </div>
+              </button>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[0.95fr_0.65fr_0.75fr]">
-        <div className={darkPanelClass("p-6")}>
-          <h2 className="text-xl font-semibold">Mix documental</h2>
-          <div className="mt-7 space-y-5">
-            {documentMix.map((item) => (
-              <div key={item.label} className="flex items-center justify-between text-lg">
-                <span>{item.label}</span>
-                <span className="font-semibold">{item.count} docs</span>
-              </div>
+      <section className="relative space-y-4 overflow-hidden rounded-2xl border border-cyan-900/15 bg-cyan-950/[0.025] p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] dark:border-cyan-700/30 dark:bg-cyan-950/15">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-800 via-cyan-600 to-transparent dark:from-cyan-500 dark:via-cyan-700/70" />
+        <div className="relative flex items-center gap-3">
+          <span className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-cyan-900 shadow-sm ring-1 ring-cyan-900/15 dark:bg-black/35 dark:text-cyan-300 dark:ring-cyan-600/30">
+            02 · Acción
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">Priorización y clientes</h2>
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              Próximas gestiones, clientes cumplidores y focos morosos.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr_0.8fr]">
+        <div className={darkPanelClass("p-4")}>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold">Acciones sugeridas</h2>
+            <button className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs text-stone-600 dark:border-stone-700 dark:bg-black/30 dark:text-stone-300">
+              <Target className="size-4" aria-hidden="true" />
+              Prioridad por vencimiento
+            </button>
+          </div>
+          <div className="mt-4 space-y-3">
+            {acciones.map((factura) => (
+              <Link
+                key={factura.id}
+                href={`/facturas?filtro=${
+                  factura.estadoVencimiento === "Factura Vencida" ? "Vencidas" : "Por%20vencer"
+                }&busqueda=${encodeURIComponent(factura.numero)}`}
+                className="grid gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/45 hover:shadow-md sm:grid-cols-[1fr_auto] dark:border-stone-700 dark:bg-black/45 dark:hover:border-orange-500/40 dark:hover:bg-orange-500/10"
+              >
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DocumentFolio tipoDocumento={factura.tipoDocumento} numero={factura.numero} size="sm" />
+                    <span className="rounded-md bg-stone-200 px-2 py-1 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+                      {factura.estadoVencimiento === "Factura Vencida" ? "Vencida" : "Próxima a vencer"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
+                    {factura.cliente.nombre} · vence {formatDate(factura.fechaVencimiento)}
+                  </p>
+                </div>
+                <div className="text-left sm:text-right">
+                  <p className="font-semibold">{formatCurrency(factura.saldoPendiente)}</p>
+                  <p className="text-xs text-stone-500 dark:text-stone-400">{Math.round(factura.progresoPago)}% pagado</p>
+                </div>
+              </Link>
             ))}
           </div>
         </div>
 
         <div className={darkPanelClass("overflow-hidden")}>
-          <div className="border-b border-t-4 border-b-stone-200 border-t-emerald-500 bg-white px-6 py-5 text-stone-950 dark:border-b-stone-700 dark:bg-[#151515] dark:text-white">
-            <h2 className="text-xl font-semibold">Top clientes cumplidores</h2>
+          <div className="border-b border-t-4 border-b-stone-200 border-t-emerald-500 bg-white px-4 py-3 text-stone-950 dark:border-b-stone-700 dark:bg-[#151515] dark:text-white">
+            <h2 className="text-lg font-semibold">Top clientes cumplidores</h2>
           </div>
-          <div className="space-y-4 p-5">
+          <div className="space-y-3 p-4">
             {clientStats.cumplidores.map((client) => (
-              <div key={client.cliente} className="rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-black/45">
+              <div key={client.cliente} className="rounded-lg border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-black/45">
                 <p className="font-semibold">{client.cliente}</p>
                 <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
                   {client.promedioDias} días atraso promedio · {client.vencidas} eventos
                 </p>
-                <div className="mt-4 flex items-center gap-3">
+                <div className="mt-3 flex items-center gap-3">
                   <CheckCircle2 className="size-4 text-emerald-400" aria-hidden="true" />
                   <span className="font-semibold">{client.puntualidad}% pago puntual</span>
                 </div>
@@ -1360,17 +1596,17 @@ export function DashboardView({
         </div>
 
         <div className={darkPanelClass("overflow-hidden")}>
-          <div className="border-b border-t-4 border-b-stone-200 border-t-rose-500 bg-white px-6 py-5 text-stone-950 dark:border-b-stone-700 dark:bg-[#151515] dark:text-white">
-            <h2 className="text-xl font-semibold">Top clientes morosos</h2>
+          <div className="border-b border-t-4 border-b-stone-200 border-t-rose-500 bg-white px-4 py-3 text-stone-950 dark:border-b-stone-700 dark:bg-[#151515] dark:text-white">
+            <h2 className="text-lg font-semibold">Top clientes morosos</h2>
           </div>
-          <div className="space-y-4 p-5">
+          <div className="space-y-3 p-4">
             {clientStats.morosos.map((client) => (
-              <div key={client.cliente} className="rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-black/45">
+              <div key={client.cliente} className="rounded-lg border border-stone-200 bg-stone-50 p-3 dark:border-stone-700 dark:bg-black/45">
                 <p className="font-semibold">{client.cliente}</p>
                 <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
                   {client.promedioDias} días atraso promedio · {client.vencidas} eventos
                 </p>
-                <div className="mt-4 flex items-center gap-3">
+                <div className="mt-3 flex items-center gap-3">
                   <AlertTriangle className="size-4 text-rose-500" aria-hidden="true" />
                   <span className="font-semibold">{formatCurrency(client.saldoVencido)}</span>
                 </div>
@@ -1385,80 +1621,6 @@ export function DashboardView({
             ))}
           </div>
         </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[0.8fr_1fr]">
-        <div className={darkPanelClass("p-6")}>
-          <h2 className="text-xl font-semibold">Heatmap de mora</h2>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            {agingBuckets.map((bucket) => {
-              const isActive = activeAgingBucket?.label === bucket.label;
-
-              return (
-              <button
-                key={bucket.label}
-                type="button"
-                onClick={() => setActiveAgingKey(bucket.label)}
-                onMouseEnter={() => setActiveAgingKey(bucket.label)}
-                className={`rounded-lg border bg-gradient-to-br ${bucket.color} ${bucket.text} ${bucket.border} p-5 text-left shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition ${
-                  isActive ? "ring-2 ring-orange-500 ring-offset-2 ring-offset-white dark:ring-offset-stone-950" : "hover:-translate-y-0.5 hover:shadow-lg"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-lg font-semibold">{bucket.label}</p>
-                  <span className="rounded-md bg-white/80 px-3 py-1 text-sm font-semibold text-stone-950 shadow-sm dark:bg-black/55 dark:text-white">
-                    {bucket.count} docs
-                  </span>
-                </div>
-                <p className="mt-5 text-2xl font-semibold">{formatCurrency(bucket.monto)}</p>
-                <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/75 dark:bg-black/45">
-                  <motion.div
-                    className={`h-full rounded-full ${bucket.bar}`}
-                    initial={{ width: 0 }}
-                    animate={{ width: progressWidth((bucket.monto / maxBucket) * 100) }}
-                  />
-                </div>
-              </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={darkPanelClass("p-6")}>
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold">Acciones sugeridas</h2>
-            <button className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-4 py-2 text-sm text-stone-600 dark:border-stone-700 dark:bg-black/30 dark:text-stone-300">
-              <Target className="size-4" aria-hidden="true" />
-              Prioridad por vencimiento
-            </button>
-          </div>
-          <div className="mt-5 space-y-4">
-            {acciones.map((factura) => (
-              <Link
-                key={factura.id}
-                href={`/facturas?filtro=${
-                  factura.estadoVencimiento === "Factura Vencida" ? "Vencidas" : "Por%20vencer"
-                }&busqueda=${encodeURIComponent(factura.numero)}`}
-                className="grid gap-4 rounded-lg border border-stone-200 bg-stone-50 p-4 transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/45 hover:shadow-md sm:grid-cols-[1fr_auto] dark:border-stone-700 dark:bg-black/45 dark:hover:border-orange-500/40 dark:hover:bg-orange-500/10"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DocumentFolio tipoDocumento={factura.tipoDocumento} numero={factura.numero} size="sm" />
-                    <span className="rounded-md bg-stone-200 px-2 py-1 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">
-                      {factura.estadoVencimiento === "Factura Vencida" ? "Vencida" : "Próxima a vencer"}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-stone-500 dark:text-stone-400">
-                    {factura.cliente.nombre} · vence {formatDate(factura.fechaVencimiento)}
-                  </p>
-                </div>
-                <div className="text-left sm:text-right">
-                  <p className="text-lg font-semibold">{formatCurrency(factura.saldoPendiente)}</p>
-                  <p className="text-sm text-stone-500 dark:text-stone-400">{Math.round(factura.progresoPago)}% pagado</p>
-                </div>
-              </Link>
-            ))}
-          </div>
         </div>
       </section>
 
