@@ -28,5 +28,5 @@ export function formatearFolioDocumento(
   const numero = limpiarNumeroSii(numeroSii);
   const prefijo = obtenerPrefijoDocumento(tipoDocumento);
 
-  return `${prefijo}-${numero}`;
+  return `${prefijo} ${numero}`;
 }

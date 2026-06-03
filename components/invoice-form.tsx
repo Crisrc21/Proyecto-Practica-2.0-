@@ -10,11 +10,12 @@ import {
   X
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { DocumentFolio } from "@/components/document-folio";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label, Select, Textarea } from "@/components/ui/form";
 import { calcularFechaVencimiento } from "@/lib/cxc-calculations";
-import { formatearFolioDocumento, obtenerPrefijoDocumento } from "@/lib/document-ids";
+import { obtenerPrefijoDocumento } from "@/lib/document-ids";
 import { formatCurrency, formatDate, toIsoDate } from "@/lib/formatters";
 import { Cliente, CondicionPago, TipoDocumento } from "@/lib/types";
 
@@ -51,7 +52,6 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
   const cliente = clientes.find((item) => item.id === clienteId);
   const montoNumerico = Number(monto) || 0;
   const prefijoDocumento = obtenerPrefijoDocumento(tipoDocumento);
-  const folioDocumento = formatearFolioDocumento(tipoDocumento, numeroSii);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -236,9 +236,7 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Documento</span>
-                <span className="rounded-md bg-primary/10 px-2 py-1 font-semibold text-primary">
-                  {folioDocumento}
-                </span>
+                <DocumentFolio tipoDocumento={tipoDocumento} numero={numeroSii} size="sm" />
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Cliente</span>

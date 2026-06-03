@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ColumnDef,
   flexRender,
@@ -10,23 +11,22 @@ import {
   useReactTable
 } from "@tanstack/react-table";
 import { motion } from "framer-motion";
-import { ArrowUpDown, FileText, Search } from "lucide-react";
-import {
-  EstadoDocumentalBadge,
-  EstadoPagoBadge,
-  EstadoVencimientoBadge
-} from "@/components/status-badges";
+import { ArrowUpDown, Search } from "lucide-react";
+import { DocumentFolio } from "@/components/document-folio";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
 import { formatearFolioDocumento } from "@/lib/document-ids";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { FacturaCalculada } from "@/lib/types";
+import { EstadoDocumental, EstadoPago, EstadoVencimiento, FacturaCalculada } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type FiltroFactura =
+export type FiltroFactura =
   | "Todas"
+  | "Pendientes"
   | "Vigentes"
+  | "Por vencer"
   | "Vencidas"
   | "No pagadas"
   | "Pagadas parcialmente"
@@ -37,7 +37,9 @@ type FiltroFactura =
 
 const filtros: FiltroFactura[] = [
   "Todas",
+  "Pendientes",
   "Vigentes",
+  "Por vencer",
   "Vencidas",
   "No pagadas",
   "Pagadas parcialmente",
@@ -49,7 +51,9 @@ const filtros: FiltroFactura[] = [
 
 function aplicaFiltro(factura: FacturaCalculada, filtro: FiltroFactura) {
   if (filtro === "Todas") return true;
+  if (filtro === "Pendientes") return factura.saldoPendiente > 0;
   if (filtro === "Vigentes") return factura.estadoVencimiento === "Factura Vigente";
+  if (filtro === "Por vencer") return factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0;
   if (filtro === "Vencidas") return factura.estadoVencimiento === "Factura Vencida";
   if (filtro === "No pagadas") return factura.estadoPago === "No Pagado";
   if (filtro === "Pagadas parcialmente") return factura.estadoPago === "Pagado Parcialmente";
@@ -59,10 +63,76 @@ function aplicaFiltro(factura: FacturaCalculada, filtro: FiltroFactura) {
   return factura.notasDebito.length > 0;
 }
 
-export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
-  const [filtro, setFiltro] = useState<FiltroFactura>("Todas");
-  const [query, setQuery] = useState("");
+export function normalizarFiltroFactura(value: string | null): FiltroFactura {
+  const decoded = value ? decodeURIComponent(value).toLowerCase() : "";
+  return filtros.find((item) => item.toLowerCase() === decoded) ?? "Todas";
+}
+
+function EstadoVencimientoCompacto({ estado }: { estado: EstadoVencimiento }) {
+  return (
+    <Badge tone={estado === "Factura Vencida" ? "danger" : "success"}>
+      {estado === "Factura Vencida" ? "Vencida" : "Vigente"}
+    </Badge>
+  );
+}
+
+function EstadoPagoCompacto({ estado }: { estado: EstadoPago }) {
+  const tone =
+    estado === "Pagado Completamente"
+      ? "success"
+      : estado === "Pagado Parcialmente"
+        ? "warning"
+        : "muted";
+  const label =
+    estado === "Pagado Completamente"
+      ? "Pagada"
+      : estado === "Pagado Parcialmente"
+        ? "Parcial"
+        : "No pagada";
+
+  return <Badge tone={tone}>{label}</Badge>;
+}
+
+function EstadoDocumentalCompacto({ estado }: { estado: EstadoDocumental }) {
+  return <Badge tone={estado === "Anulada" ? "danger" : "default"}>{estado}</Badge>;
+}
+
+export function FacturasTable({
+  facturas,
+  initialFiltro = "Todas",
+  initialQuery = ""
+}: {
+  facturas: FacturaCalculada[];
+  initialFiltro?: string;
+  initialQuery?: string;
+}) {
+  const router = useRouter();
+  const [filtro, setFiltro] = useState<FiltroFactura>(() => normalizarFiltroFactura(initialFiltro));
+  const [query, setQuery] = useState(initialQuery);
   const [sorting, setSorting] = useState<SortingState>([]);
+
+  useEffect(() => {
+    setFiltro(normalizarFiltroFactura(initialFiltro));
+    setQuery(initialQuery);
+  }, [initialFiltro, initialQuery]);
+
+  function updateFiltro(item: FiltroFactura) {
+    setFiltro(item);
+    const params = new URLSearchParams();
+
+    if (item === "Todas") {
+      params.delete("filtro");
+    } else {
+      params.set("filtro", item);
+    }
+
+    if (query.trim()) {
+      params.set("busqueda", query.trim());
+    }
+
+    const queryString = params.toString();
+    router.replace(queryString ? `/facturas?${queryString}` : "/facturas", { scroll: false });
+  }
 
   const data = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -87,46 +157,47 @@ export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
         accessorKey: "numero",
         header: "Documento",
         cell: ({ row }) => (
-          <span className="inline-flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1 font-semibold text-primary ring-1 ring-primary/15">
-            <FileText className="size-3.5" aria-hidden="true" />
-            {formatearFolioDocumento(row.original.tipoDocumento, row.original.numero)}
-          </span>
+          <DocumentFolio
+            tipoDocumento={row.original.tipoDocumento}
+            numero={row.original.numero}
+            size="sm"
+          />
         )
-      },
-      {
-        accessorKey: "tipoDocumento",
-        header: "Tipo documento",
-        cell: ({ row }) => <span className="max-w-44 text-wrap">{row.original.tipoDocumento}</span>
       },
       {
         accessorFn: (row) => row.cliente.nombre,
         id: "cliente",
-        header: "Cliente"
+        header: "Cliente",
+        cell: ({ row }) => (
+          <span className="block truncate font-medium" title={row.original.cliente.nombre}>
+            {row.original.cliente.nombre}
+          </span>
+        )
       },
       {
         accessorKey: "fechaEmision",
-        header: "Fecha emisión",
+        header: "Emisión",
         cell: ({ row }) => formatDate(row.original.fechaEmision)
       },
       {
         accessorKey: "fechaVencimiento",
-        header: "Fecha vencimiento",
+        header: "Vencimiento",
         cell: ({ row }) => formatDate(row.original.fechaVencimiento)
       },
       {
         accessorKey: "condicionPago",
-        header: "Condición de pago"
+        header: "Condición"
       },
       {
         accessorKey: "monto",
-        header: "Monto factura",
+        header: "Monto",
         cell: ({ row }) => formatCurrency(row.original.monto)
       },
       {
         accessorKey: "saldoPendiente",
-        header: "Saldo pendiente",
+        header: "Saldo",
         cell: ({ row }) => (
-          <div className="min-w-36 space-y-2">
+          <div className="space-y-2">
             <span className="number-tabular font-medium">
               {formatCurrency(row.original.saldoPendiente)}
             </span>
@@ -136,18 +207,18 @@ export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
       },
       {
         accessorKey: "estadoVencimiento",
-        header: "Estado vencimiento",
-        cell: ({ row }) => <EstadoVencimientoBadge estado={row.original.estadoVencimiento} />
+        header: "Mora",
+        cell: ({ row }) => <EstadoVencimientoCompacto estado={row.original.estadoVencimiento} />
       },
       {
         accessorKey: "estadoPago",
-        header: "Estado pago",
-        cell: ({ row }) => <EstadoPagoBadge estado={row.original.estadoPago} />
+        header: "Pago",
+        cell: ({ row }) => <EstadoPagoCompacto estado={row.original.estadoPago} />
       },
       {
         accessorKey: "estadoDocumental",
-        header: "Estado documental",
-        cell: ({ row }) => <EstadoDocumentalBadge estado={row.original.estadoDocumental} />
+        header: "Doc.",
+        cell: ({ row }) => <EstadoDocumentalCompacto estado={row.original.estadoDocumental} />
       }
     ],
     []
@@ -176,7 +247,7 @@ export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
               type="button"
               variant={item === filtro ? "default" : "outline"}
               size="sm"
-              onClick={() => setFiltro(item)}
+              onClick={() => updateFiltro(item)}
               className="shadow-sm"
             >
               {item}
@@ -195,13 +266,28 @@ export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
       </div>
 
       <div className="overflow-hidden rounded-xl border bg-white/90 shadow-sm backdrop-blur">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-sm">
+        <div className="overflow-hidden">
+          <table className="w-full table-fixed border-collapse text-[12px]">
+            <colgroup>
+              <col className="w-[12%]" />
+              <col className="w-[16%]" />
+              <col className="w-[8%]" />
+              <col className="w-[9%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+              <col className="w-[12%]" />
+              <col className="w-[8%]" />
+              <col className="w-[9%]" />
+              <col className="w-[8%]" />
+            </colgroup>
             <thead className="bg-slate-950 text-left text-xs uppercase text-white/70">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <th key={header.id} className="px-4 py-3 font-semibold">
+                    <th
+                      key={header.id}
+                      className="px-2.5 py-3 font-semibold"
+                    >
                       <button
                         type="button"
                         className={cn(
@@ -222,7 +308,10 @@ export function FacturasTable({ facturas }: { facturas: FacturaCalculada[] }) {
               {table.getRowModel().rows.map((row) => (
                 <tr key={row.id} className="border-t transition hover:bg-primary/5">
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-4 py-3 align-middle">
+                    <td
+                      key={cell.id}
+                      className="px-2.5 py-3 align-middle"
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

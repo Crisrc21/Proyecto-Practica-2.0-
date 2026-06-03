@@ -6,7 +6,6 @@ import {
   CircleCheck,
   CreditCard,
   FilePenLine,
-  FileText,
   GitBranch,
   ReceiptText
 } from "lucide-react";
@@ -15,10 +14,11 @@ import {
   EstadoPagoBadge,
   EstadoVencimientoBadge
 } from "@/components/status-badges";
+import { DocumentFolio, nombreCortoDocumento } from "@/components/document-folio";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label, Select } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
-import { formatearFolioDocumento } from "@/lib/document-ids";
+import { formatearFolioDocumento, limpiarNumeroSii, obtenerPrefijoDocumento } from "@/lib/document-ids";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { EventoTimeline, FacturaCalculada } from "@/lib/types";
 
@@ -45,9 +45,6 @@ export function TraceabilityView({
     [facturaId, facturas]
   );
   const timeline = factura ? timelines[factura.id] : [];
-  const folioFactura = factura
-    ? formatearFolioDocumento(factura.tipoDocumento, factura.numero)
-    : "";
   const relatedDocuments = useMemo(() => {
     if (!factura) return [];
 
@@ -102,36 +99,45 @@ export function TraceabilityView({
               >
                 {facturas.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {formatearFolioDocumento(item.tipoDocumento, item.numero)} · {item.cliente.nombre}
+                    {obtenerPrefijoDocumento(item.tipoDocumento)} {limpiarNumeroSii(item.numero)} · {item.cliente.nombre}
                   </option>
                 ))}
               </Select>
             </div>
 
-            <div className="rounded-lg border bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(9,106,124,0.92))] p-4 text-white shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-md bg-white/12">
-                  <FileText className="size-5" aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase text-white/60">Folio documental</p>
-                  <p className="text-xl font-semibold">{folioFactura}</p>
-                </div>
-              </div>
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-white/65">Monto ajustado</span>
-                  <span className="number-tabular font-semibold">
-                    {formatCurrency(factura.montoAjustado)}
+            <div className="overflow-hidden rounded-lg border border-stone-200 bg-white text-stone-950 shadow-[0_12px_28px_rgba(15,23,42,0.08)]">
+              <div className="h-1 bg-gradient-to-r from-orange-500 to-amber-300" />
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-stone-500">Folio documental</p>
+                    <DocumentFolio
+                      tipoDocumento={factura.tipoDocumento}
+                      numero={factura.numero}
+                      size="lg"
+                      showLabel={false}
+                      className="mt-3"
+                    />
+                  </div>
+                  <span className="rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                    {nombreCortoDocumento(factura.tipoDocumento)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-white/65">Saldo pendiente</span>
-                  <span className="number-tabular font-semibold">
-                    {formatCurrency(factura.saldoPendiente)}
-                  </span>
+                <div className="mt-4 space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-stone-500">Monto ajustado</span>
+                    <span className="number-tabular font-semibold">
+                      {formatCurrency(factura.montoAjustado)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-stone-500">Saldo pendiente</span>
+                    <span className="number-tabular font-semibold">
+                      {formatCurrency(factura.saldoPendiente)}
+                    </span>
+                  </div>
+                  <Progress value={factura.progresoPago} className="bg-stone-100" />
                 </div>
-                <Progress value={factura.progresoPago} className="bg-white/15" />
               </div>
             </div>
 

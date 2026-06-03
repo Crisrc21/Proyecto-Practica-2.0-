@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
+import { DocumentFolio } from "@/components/document-folio";
 import {
   Activity,
   AlertTriangle,
@@ -77,7 +79,8 @@ export function DashboardView({
           caption: "Base activa",
           positive: true,
           value: kpis.carteraTotal,
-          isMoney: true
+          isMoney: true,
+          href: "/facturas"
         },
         {
           key: "monto-cobrado",
@@ -89,7 +92,8 @@ export function DashboardView({
           caption: "Cash-in",
           positive: true,
           value: kpis.montoCobrado,
-          isMoney: true
+          isMoney: true,
+          href: "/facturas?filtro=Pagadas%20completamente"
         },
         {
           key: "monto-pendiente",
@@ -101,7 +105,8 @@ export function DashboardView({
           caption: "Por gestionar",
           positive: false,
           value: kpis.montoPendiente,
-          isMoney: true
+          isMoney: true,
+          href: "/facturas?filtro=Pendientes"
         }
       ]
     },
@@ -118,7 +123,8 @@ export function DashboardView({
           caption: "Liquidadas",
           positive: true,
           value: kpis.facturasPagadasCompletamente,
-          isMoney: false
+          isMoney: false,
+          href: "/facturas?filtro=Pagadas%20completamente"
         },
         {
           key: "facturas-parciales",
@@ -130,7 +136,8 @@ export function DashboardView({
           caption: "Con abonos",
           positive: true,
           value: partialCount,
-          isMoney: false
+          isMoney: false,
+          href: "/facturas?filtro=Pagadas%20parcialmente"
         },
         {
           key: "facturas-por-vencer",
@@ -142,7 +149,8 @@ export function DashboardView({
           caption: "Próximos cobros",
           positive: true,
           value: upcomingCount,
-          isMoney: false
+          isMoney: false,
+          href: "/facturas?filtro=Por%20vencer"
         }
       ]
     }
@@ -184,7 +192,8 @@ export function DashboardView({
           .reduce((total, factura) => total + factura.saldoPendiente, 0),
         count: facturas.filter((factura) => factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0).length,
         color: "#f97316",
-        caption: "seguimiento"
+        caption: "seguimiento",
+        href: "/facturas?filtro=Por%20vencer"
       },
       {
         key: "vencida" as const,
@@ -194,7 +203,8 @@ export function DashboardView({
           .reduce((total, factura) => total + factura.saldoPendiente, 0),
         count: facturas.filter((factura) => factura.estadoVencimiento === "Factura Vencida" && factura.saldoPendiente > 0).length,
         color: "#e11d48",
-        caption: "acción prioritaria"
+        caption: "acción prioritaria",
+        href: "/facturas?filtro=Vencidas"
       },
       {
         key: "pagada" as const,
@@ -204,7 +214,8 @@ export function DashboardView({
           .reduce((total, factura) => total + factura.montoCobrado, 0),
         count: facturas.filter((factura) => factura.estadoPago === "Pagado Completamente").length,
         color: "#10b981",
-        caption: "recuperado"
+        caption: "recuperado",
+        href: "/facturas?filtro=Pagadas%20completamente"
       }
     ],
     [facturas]
@@ -304,8 +315,12 @@ export function DashboardView({
           const Icon = card.icon;
 
           return (
-            <motion.div
+            <Link
               key={card.key}
+              href={card.href}
+              className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-stone-950"
+            >
+            <motion.div
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ y: -4 }}
@@ -345,6 +360,7 @@ export function DashboardView({
                 </div>
               </div>
             </motion.div>
+            </Link>
           );
         })}
       </div>
@@ -924,10 +940,9 @@ export function DashboardView({
 
                 <div className="space-y-3">
                   {paymentStates.map((state) => (
-                    <button
+                    <Link
                       key={state.key}
-                      type="button"
-                      onClick={() => setActivePaymentKey(state.key)}
+                      href={state.href}
                       onMouseEnter={() => setActivePaymentKey(state.key)}
                       className={`w-full rounded-lg border p-3 text-left transition ${
                         activePaymentKey === state.key
@@ -956,7 +971,7 @@ export function DashboardView({
                           animate={{ width: progressWidth((state.value / Math.max(kpis.carteraTotal, 1)) * 100) }}
                         />
                       </div>
-                    </button>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -1419,12 +1434,16 @@ export function DashboardView({
           </div>
           <div className="mt-5 space-y-4">
             {acciones.map((factura) => (
-              <div key={factura.id} className="grid gap-4 rounded-lg border border-stone-200 bg-stone-50 p-4 sm:grid-cols-[1fr_auto] dark:border-stone-700 dark:bg-black/45">
+              <Link
+                key={factura.id}
+                href={`/facturas?filtro=${
+                  factura.estadoVencimiento === "Factura Vencida" ? "Vencidas" : "Por%20vencer"
+                }&busqueda=${encodeURIComponent(factura.numero)}`}
+                className="grid gap-4 rounded-lg border border-stone-200 bg-stone-50 p-4 transition hover:-translate-y-0.5 hover:border-orange-200 hover:bg-orange-50/45 hover:shadow-md sm:grid-cols-[1fr_auto] dark:border-stone-700 dark:bg-black/45 dark:hover:border-orange-500/40 dark:hover:bg-orange-500/10"
+              >
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-lg font-semibold">
-                      {formatearFolioDocumento(factura.tipoDocumento, factura.numero)}
-                    </p>
+                    <DocumentFolio tipoDocumento={factura.tipoDocumento} numero={factura.numero} size="sm" />
                     <span className="rounded-md bg-stone-200 px-2 py-1 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">
                       {factura.estadoVencimiento === "Factura Vencida" ? "Vencida" : "Próxima a vencer"}
                     </span>
@@ -1437,7 +1456,7 @@ export function DashboardView({
                   <p className="text-lg font-semibold">{formatCurrency(factura.saldoPendiente)}</p>
                   <p className="text-sm text-stone-500 dark:text-stone-400">{Math.round(factura.progresoPago)}% pagado</p>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
