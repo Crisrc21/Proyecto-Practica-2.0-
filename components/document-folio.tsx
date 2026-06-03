@@ -52,13 +52,13 @@ export function DocumentFolio({
     <span
       title={tipoDocumento}
       className={cn(
-        "inline-flex flex-col font-medium text-stone-800",
+        "inline-flex flex-col font-medium text-stone-800 dark:text-stone-100",
         classes.root,
         className
       )}
     >
       {showLabel && (
-        <span className={cn("leading-none text-stone-500", classes.label)}>
+        <span className={cn("leading-none text-stone-500 dark:text-stone-400", classes.label)}>
           {nombreCortoDocumento(tipoDocumento)}
         </span>
       )}
@@ -66,7 +66,7 @@ export function DocumentFolio({
         <span className={cn("font-semibold text-orange-600", classes.prefix)}>
           {obtenerPrefijoDocumento(tipoDocumento)}
         </span>
-        <span className={cn("number-tabular font-medium text-stone-800", classes.number)}>
+        <span className={cn("number-tabular font-medium text-stone-800 dark:text-stone-100", classes.number)}>
           {limpiarNumeroSii(numero)}
         </span>
       </span>

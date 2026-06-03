@@ -260,12 +260,12 @@ export function FacturasTable({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Buscar documento, cliente o RUT"
-            className="bg-white/90 pl-9"
+            className="bg-white/90 pl-9 dark:bg-stone-900/90 dark:text-white"
           />
         </label>
       </div>
 
-      <div className="overflow-hidden rounded-xl border bg-white/90 shadow-sm backdrop-blur">
+      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white/90 text-stone-950 shadow-sm backdrop-blur dark:border-stone-700 dark:bg-stone-950/85 dark:text-stone-100">
         <div className="overflow-hidden">
           <table className="w-full table-fixed border-collapse text-[12px]">
             <colgroup>
@@ -280,7 +280,7 @@ export function FacturasTable({
               <col className="w-[9%]" />
               <col className="w-[8%]" />
             </colgroup>
-            <thead className="bg-slate-950 text-left text-xs uppercase text-white/70">
+            <thead className="bg-slate-950 text-left text-xs uppercase text-white/70 dark:bg-black">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
@@ -304,13 +304,13 @@ export function FacturasTable({
                 </tr>
               ))}
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
               {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-t transition hover:bg-primary/5">
+                <tr key={row.id} className="transition hover:bg-primary/5 dark:hover:bg-orange-500/10">
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
-                      className="px-2.5 py-3 align-middle"
+                      className="px-2.5 py-3 align-middle text-stone-700 dark:text-stone-200"
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>

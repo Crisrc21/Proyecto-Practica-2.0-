@@ -19,8 +19,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           variant === "secondary" &&
             "bg-secondary text-secondary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-secondary/90 hover:shadow-md",
           variant === "outline" &&
-            "border border-border bg-white/90 hover:-translate-y-0.5 hover:bg-muted hover:text-foreground hover:shadow-sm",
-          variant === "ghost" && "hover:bg-muted hover:text-foreground",
+            "border border-border bg-white/90 text-foreground hover:-translate-y-0.5 hover:bg-muted hover:text-foreground hover:shadow-sm dark:bg-stone-900/80 dark:text-stone-200 dark:hover:bg-stone-800 dark:hover:text-white",
+          variant === "ghost" && "text-foreground hover:bg-muted hover:text-foreground dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-white",
           size === "sm" && "h-8 px-3",
           size === "md" && "h-10 px-4",
           size === "icon" && "size-9",

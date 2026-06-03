@@ -363,14 +363,23 @@ export function DashboardView({
   }, [mapFacturas]);
   const maxTrendValue = Math.max(...trendData.flatMap((item) => [item.facturado, item.ingresado]), 1);
   const trendPoint = (value: number, index: number) => {
-    const x = trendData.length === 1 ? 210 : 54 + (index / Math.max(trendData.length - 1, 1)) * 336;
-    const y = 178 - (value / maxTrendValue) * 132;
+    const x = trendData.length === 1 ? 660 : 86 + (index / Math.max(trendData.length - 1, 1)) * 1170;
+    const y = 142 - (value / maxTrendValue) * 106;
     return { x, y };
   };
   const billedTrendPoints = trendData.map((item, index) => trendPoint(item.facturado, index));
   const paidTrendPoints = trendData.map((item, index) => trendPoint(item.ingresado, index));
   const billedPolyline = billedTrendPoints.map((point) => `${point.x},${point.y}`).join(" ");
   const paidPolyline = paidTrendPoints.map((point) => `${point.x},${point.y}`).join(" ");
+  const trendBaselineY = 142;
+  const billedAreaPoints =
+    billedTrendPoints.length > 0
+      ? `${billedTrendPoints[0].x},${trendBaselineY} ${billedPolyline} ${billedTrendPoints.at(-1)?.x},${trendBaselineY}`
+      : "";
+  const paidAreaPoints =
+    paidTrendPoints.length > 0
+      ? `${paidTrendPoints[0].x},${trendBaselineY} ${paidPolyline} ${paidTrendPoints.at(-1)?.x},${trendBaselineY}`
+      : "";
   const activeTrend = trendData.find((item) => item.key === activeTrendKey) ?? trendData.at(-1);
   const activeTrendGap = activeTrend ? activeTrend.facturado - activeTrend.ingresado : 0;
 
@@ -732,25 +741,25 @@ export function DashboardView({
             </div>
           </div>
 
-          <div className="rounded-xl border border-stone-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-stone-700 dark:bg-black/24">
+          <div className="rounded-xl border border-stone-200 bg-white/85 p-4 shadow-sm backdrop-blur dark:border-stone-700 dark:bg-stone-950/90 dark:shadow-black/30">
             <div className="flex items-start gap-4">
-              <div className="flex size-14 items-center justify-center rounded-lg border border-stone-200 bg-white text-orange-600 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+              <div className="flex size-14 items-center justify-center rounded-lg border border-stone-200 bg-white text-orange-600 shadow-sm dark:border-orange-500/35 dark:bg-orange-500/15 dark:text-orange-300">
                 <Gauge className="size-6" aria-hidden="true" />
               </div>
               <div>
                 <p className="text-sm text-stone-500 dark:text-stone-400">Foco activo</p>
-                <h2 className="text-xl font-semibold">Visión de salud financiera</h2>
+                <h2 className="text-xl font-semibold text-stone-950 dark:text-white">Visión de salud financiera</h2>
               </div>
             </div>
             <p className="mt-6 leading-7 text-stone-600 dark:text-stone-300">
               Cruza saldo, documentos y velocidad de cobro para priorizar la cartera completa.
             </p>
             <div className="mt-7 grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-[#151515]">
+              <div className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900/80">
                 <p className="text-sm text-stone-500 dark:text-stone-400">Cobrado</p>
                 <p className="mt-2 text-3xl font-semibold text-emerald-600 dark:text-emerald-400">{recovery}%</p>
               </div>
-              <div className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-[#151515]">
+              <div className="rounded-lg border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900/80">
                 <p className="text-sm text-stone-500 dark:text-stone-400">Presión mora</p>
                 <p className="mt-2 text-3xl font-semibold text-rose-600 dark:text-rose-400">{mora}%</p>
               </div>
@@ -1103,38 +1112,42 @@ export function DashboardView({
                   </span>
                 </button>
 
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {paymentStates.map((state) => (
                     <Link
                       key={state.key}
                       href={state.href}
                       onMouseEnter={() => setActivePaymentKey(state.key)}
-                      className={`w-full rounded-lg border p-3 text-left transition ${
+                      className={`grid w-full gap-3 rounded-lg border p-3 text-left transition sm:grid-cols-[150px_1fr] sm:items-center ${
                         activePaymentKey === state.key
-                          ? "border-orange-300 bg-stone-50 shadow-sm dark:border-orange-500/40 dark:bg-stone-900"
+                          ? "border-stone-300 bg-stone-50 shadow-sm dark:border-stone-600 dark:bg-stone-900"
                           : "border-stone-200 bg-white hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-950"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="flex items-center gap-2 text-sm font-semibold">
-                          <span className="size-2.5 rounded-full" style={{ backgroundColor: state.color }} />
-                          {state.label}
-                        </span>
-                        <span className="number-tabular text-sm font-semibold">
-                          {Math.round((state.value / Math.max(mapKpis.carteraTotal, 1)) * 100)}%
-                        </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: state.color }} />
+                          <span className="font-semibold">{state.label}</span>
+                        </div>
+                        <p className="mt-1 number-tabular text-sm text-stone-500 dark:text-stone-400">
+                          {formatCurrency(state.value)}
+                        </p>
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-3 text-sm">
-                        <span className="number-tabular text-stone-500 dark:text-stone-400">{formatCurrency(state.value)}</span>
-                        <span style={{ color: state.color }}>{state.caption}</span>
-                      </div>
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
-                        <motion.div
-                          className="h-full rounded-full"
-                          style={{ backgroundColor: state.color }}
-                          initial={{ width: 0 }}
-                          animate={{ width: progressWidth((state.value / Math.max(mapKpis.carteraTotal, 1)) * 100) }}
-                        />
+                      <div className="min-w-0">
+                        <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                          <span style={{ color: state.color }}>{state.caption}</span>
+                          <span className="number-tabular font-semibold">
+                            {Math.round((state.value / Math.max(mapKpis.carteraTotal, 1)) * 100)}%
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: state.color }}
+                            initial={{ width: 0 }}
+                            animate={{ width: progressWidth((state.value / Math.max(mapKpis.carteraTotal, 1)) * 100) }}
+                          />
+                        </div>
                       </div>
                     </Link>
                   ))}
@@ -1154,7 +1167,7 @@ export function DashboardView({
               <div>
                 <h3 className="font-semibold">Tendencia financiera mensual</h3>
                 <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-                  Facturado por emisión versus ingresado por fecha de pago.
+                  Área de facturación versus ingreso para detectar brechas mensuales.
                 </p>
               </div>
               <div className="grid gap-2 text-right">
@@ -1167,7 +1180,7 @@ export function DashboardView({
               </div>
             </div>
               <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3 dark:border-stone-800 dark:bg-stone-950">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-2">
                   <span className="inline-flex items-center gap-2 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">
                     <span className="size-2.5 rounded-full bg-orange-500" />
@@ -1184,12 +1197,22 @@ export function DashboardView({
                     : "Facturado por emisión · ingresado por fecha de pago"}
                 </span>
               </div>
-              <svg viewBox="0 0 420 230" className="h-56 w-full overflow-visible">
-                {[46, 79, 112, 145, 178].map((y) => (
+              <svg viewBox="0 0 1320 180" className="h-56 w-full overflow-visible">
+                <defs>
+                  <linearGradient id="billedAreaFill" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#f97316" stopOpacity="0.34" />
+                    <stop offset="100%" stopColor="#f97316" stopOpacity="0.04" />
+                  </linearGradient>
+                  <linearGradient id="paidAreaFill" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.30" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.03" />
+                  </linearGradient>
+                </defs>
+                {[36, 62.5, 89, 115.5, 142].map((y) => (
                   <line
                     key={y}
-                    x1="54"
-                    x2="390"
+                    x1="86"
+                    x2="1256"
                     y1={y}
                     y2={y}
                     stroke="currentColor"
@@ -1200,14 +1223,32 @@ export function DashboardView({
                 {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
                   <text
                     key={ratio}
-                    x="46"
-                    y={178 - ratio * 132 + 4}
+                    x="74"
+                    y={142 - ratio * 106 + 4}
                     textAnchor="end"
                     className="fill-stone-500 text-[10px]"
                   >
                     {compactCurrency(maxTrendValue * ratio)}
                   </text>
                 ))}
+                {billedAreaPoints && (
+                  <motion.polygon
+                    points={billedAreaPoints}
+                    fill="url(#billedAreaFill)"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.6 }}
+                  />
+                )}
+                {paidAreaPoints && (
+                  <motion.polygon
+                    points={paidAreaPoints}
+                    fill="url(#paidAreaFill)"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.6, delay: 0.12 }}
+                  />
+                )}
                 <motion.polyline
                   points={billedPolyline}
                   fill="none"
@@ -1246,8 +1287,8 @@ export function DashboardView({
                         <line
                           x1={billedPoint.x}
                           x2={billedPoint.x}
-                          y1="42"
-                          y2="184"
+                          y1="30"
+                          y2="148"
                           stroke="#f97316"
                           strokeOpacity="0.22"
                           strokeDasharray="4 4"
@@ -1257,7 +1298,7 @@ export function DashboardView({
                       <circle cx={paidPoint.x} cy={paidPoint.y} r={isActive ? "6.5" : "4.5"} fill="#10b981" stroke="white" strokeWidth="2.5" />
                       <text
                         x={billedPoint.x}
-                        y="206"
+                        y="168"
                         textAnchor="middle"
                         className={`${isActive ? "fill-orange-600" : "fill-stone-600"} text-[10px] font-semibold`}
                       >
@@ -1285,6 +1326,9 @@ export function DashboardView({
                       <span className="text-orange-600">Fact. {compactCurrency(item.facturado)}</span>
                       <span className="text-emerald-600">Ing. {compactCurrency(item.ingresado)}</span>
                     </div>
+                    <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+                      Brecha {compactCurrency(item.facturado - item.ingresado)}
+                    </p>
                   </button>
                 ))}
               </div>
