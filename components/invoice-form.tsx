@@ -61,8 +61,9 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-        <Card className="overflow-hidden">
-          <CardHeader className="border-b bg-white/70">
+        <Card className="overflow-hidden dark:border-stone-700 dark:bg-stone-950/85">
+          <CardHeader className="border-b bg-gradient-to-r from-orange-50 via-white to-white dark:border-stone-700 dark:bg-[linear-gradient(90deg,rgba(249,115,22,0.18),rgba(28,25,23,0.92)_34%,rgba(28,25,23,0.78))]">
+            <div className="mb-2 h-1 w-16 rounded-full bg-gradient-to-r from-orange-500 to-amber-300" />
             <CardTitle>Nueva factura</CardTitle>
             <CardDescription>
               El vencimiento se calcula desde emisión y condición de pago.
@@ -72,8 +73,8 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
             <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <Label htmlFor="numeroSii">Número SII</Label>
-                <div className="flex overflow-hidden rounded-md border border-input bg-white shadow-sm focus-within:ring-2 focus-within:ring-ring">
-                  <span className="flex min-w-14 items-center justify-center border-r bg-primary/10 px-3 text-sm font-semibold text-primary">
+                <div className="flex overflow-hidden rounded-md border border-input bg-white shadow-sm focus-within:ring-2 focus-within:ring-ring dark:bg-stone-900">
+                  <span className="flex min-w-14 items-center justify-center border-r bg-primary/10 px-3 text-sm font-semibold text-primary dark:border-stone-700 dark:bg-orange-500/10 dark:text-orange-300">
                     {prefijoDocumento}
                   </span>
                   <Input
@@ -156,7 +157,7 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="pdf">Archivo PDF</Label>
-                <label className="group flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-primary/30 bg-[linear-gradient(135deg,rgba(9,106,124,0.08),rgba(20,148,109,0.08))] px-4 py-6 text-center transition hover:border-primary hover:bg-primary/10">
+                <label className="group flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-primary/30 bg-[linear-gradient(135deg,rgba(9,106,124,0.08),rgba(20,148,109,0.08))] px-4 py-6 text-center transition hover:border-primary hover:bg-primary/10 dark:bg-orange-500/5 dark:hover:bg-orange-500/10">
                   <UploadCloud
                     className="size-9 text-primary transition group-hover:-translate-y-0.5"
                     aria-hidden="true"
@@ -177,7 +178,7 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center justify-between gap-3 rounded-md border bg-white p-3 text-sm shadow-sm"
+                    className="flex items-center justify-between gap-3 rounded-md border border-stone-200 bg-white p-3 text-sm shadow-sm dark:border-stone-700 dark:bg-stone-900"
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <FileCheck2 className="size-5 shrink-0 text-emerald-600" aria-hidden="true" />
@@ -215,7 +216,7 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
       >
-        <Card className="sticky top-5 overflow-hidden">
+        <Card className="sticky top-5 overflow-hidden dark:border-stone-700 dark:bg-stone-950/85">
           <CardHeader className="border-b bg-primary text-primary-foreground">
             <CardTitle className="flex items-center gap-2">
               <FileDigit className="size-5" aria-hidden="true" />
@@ -226,7 +227,7 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3 rounded-md bg-muted p-3">
+            <div className="flex items-center gap-3 rounded-md bg-muted p-3 dark:bg-stone-900">
               <CalendarDays className="size-5 text-primary" aria-hidden="true" />
               <div>
                 <p className="text-sm font-medium">Vence el {formatDate(fechaVencimiento)}</p>
@@ -261,7 +262,7 @@ export function InvoiceForm({ clientes }: { clientes: Cliente[] }) {
               <motion.div
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+                className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300"
               >
                 Factura preparada en modo local. La persistencia real queda lista para conectar a SQL.
               </motion.div>

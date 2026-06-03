@@ -136,7 +136,7 @@ export function TraceabilityView({
                       {formatCurrency(factura.saldoPendiente)}
                     </span>
                   </div>
-                  <Progress value={factura.progresoPago} className="bg-stone-100" />
+                  <Progress value={factura.progresoPago} />
                 </div>
               </div>
             </div>

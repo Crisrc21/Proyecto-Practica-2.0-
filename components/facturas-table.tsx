@@ -29,8 +29,8 @@ export type FiltroFactura =
   | "Por vencer"
   | "Vencidas"
   | "No pagadas"
-  | "Pagadas parcialmente"
-  | "Pagadas completamente"
+  | "Pagadas parcial"
+  | "Pagadas total"
   | "Anuladas"
   | "Con NC"
   | "Con ND";
@@ -42,8 +42,8 @@ const filtros: FiltroFactura[] = [
   "Por vencer",
   "Vencidas",
   "No pagadas",
-  "Pagadas parcialmente",
-  "Pagadas completamente",
+  "Pagadas parcial",
+  "Pagadas total",
   "Anuladas",
   "Con NC",
   "Con ND"
@@ -56,8 +56,8 @@ function aplicaFiltro(factura: FacturaCalculada, filtro: FiltroFactura) {
   if (filtro === "Por vencer") return factura.estadoVencimiento === "Factura Vigente" && factura.saldoPendiente > 0;
   if (filtro === "Vencidas") return factura.estadoVencimiento === "Factura Vencida";
   if (filtro === "No pagadas") return factura.estadoPago === "No Pagado";
-  if (filtro === "Pagadas parcialmente") return factura.estadoPago === "Pagado Parcialmente";
-  if (filtro === "Pagadas completamente") return factura.estadoPago === "Pagado Completamente";
+  if (filtro === "Pagadas parcial") return factura.estadoPago === "Pagado Parcialmente";
+  if (filtro === "Pagadas total") return factura.estadoPago === "Pagado Completamente";
   if (filtro === "Anuladas") return factura.estadoDocumental === "Anulada";
   if (filtro === "Con NC") return factura.notasCredito.length > 0;
   return factura.notasDebito.length > 0;
@@ -240,7 +240,7 @@ export function FacturasTable({
       className="space-y-4"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-1 flex-nowrap gap-2">
           {filtros.map((item) => (
             <Button
               key={item}
@@ -248,13 +248,13 @@ export function FacturasTable({
               variant={item === filtro ? "default" : "outline"}
               size="sm"
               onClick={() => updateFiltro(item)}
-              className="shadow-sm"
+              className="shrink-0 shadow-sm"
             >
               {item}
             </Button>
           ))}
         </div>
-        <label className="relative block w-full lg:w-80">
+        <label className="relative block w-full shrink-0 lg:w-80">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
