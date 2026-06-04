@@ -93,7 +93,7 @@ export function DashboardView({
           positive: true,
           value: kpis.montoCobrado,
           isMoney: true,
-          href: "/facturas?filtro=Pagadas%20completamente"
+          href: "/facturas?filtro=Pagadas%20total"
         },
         {
           key: "monto-pendiente",
@@ -124,7 +124,7 @@ export function DashboardView({
           positive: true,
           value: kpis.facturasPagadasCompletamente,
           isMoney: false,
-          href: "/facturas?filtro=Pagadas%20completamente"
+          href: "/facturas?filtro=Pagadas%20total"
         },
         {
           key: "facturas-parciales",

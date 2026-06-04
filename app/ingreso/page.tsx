@@ -1,15 +1,18 @@
 import { InvoiceForm } from "@/components/invoice-form";
 import { PageHeader } from "@/components/page-header";
-import { clientesMock } from "@/lib/mock-data";
+import { enriquecerFactura } from "@/lib/cxc-calculations";
+import { clientesMock, facturasMock } from "@/lib/mock-data";
 
 export default function IngresoPage() {
+  const facturas = facturasMock.map((factura) => enriquecerFactura(factura, clientesMock));
+
   return (
     <>
       <PageHeader
-        title="Ingreso de Factura"
-        description="Registro local de facturas 33 y 34 con cálculo automático de fecha de vencimiento."
+        title="Ingreso documental"
+        description="Registro local de facturas afectas, exentas, notas de crédito y notas de débito."
       />
-      <InvoiceForm clientes={clientesMock} />
+      <InvoiceForm clientes={clientesMock} facturas={facturas} />
     </>
   );
 }

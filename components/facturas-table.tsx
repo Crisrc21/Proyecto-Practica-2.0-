@@ -201,7 +201,13 @@ export function FacturasTable({
             <span className="number-tabular font-medium">
               {formatCurrency(row.original.saldoPendiente)}
             </span>
-            <Progress value={row.original.progresoPago} />
+            <Progress
+              value={
+                row.original.montoAjustado === 0
+                  ? 0
+                  : (row.original.saldoPendiente / row.original.montoAjustado) * 100
+              }
+            />
           </div>
         )
       },
