@@ -1,40 +1,70 @@
 # CxC PHO
 
-Aplicación web para gestión de cuentas por cobrar, creada con Next.js App Router, TypeScript, Tailwind CSS, componentes estilo shadcn/ui, Framer Motion y TanStack Table.
+Aplicacion interna para gestionar cuentas por cobrar: cartera, facturas, clientes, ingreso documental y trazabilidad de pagos, abonos, notas de credito y notas de debito.
 
-## Qué incluye
+## Estructura
 
-- Dashboard con cartera total, cobrado, pendiente vigente, pendiente vencido, facturas vigentes, vencidas y pagadas.
-- Gráficos simples de distribución de cartera y aging vencido.
-- Tabla de facturas con filtros de negocio, estados visuales y barra de avance de pago.
-- Ingreso local de factura 33 o 34 con cálculo automático de vencimiento.
-- Carga local de PDF del documento en el formulario de ingreso.
-- Identificación documental con prefijos: `F` para factura, `FE` para factura exenta, `NC` para nota de crédito y `ND` para nota de débito.
-- Creación local de clientes B2B y B2C.
-- Trazabilidad documental con pagos, abonos, notas de crédito, notas de débito, anulaciones, reemplazos y cierre.
-- Datos mock/locales en `lib/mock-data.ts`.
-- Reglas de negocio reutilizables en `lib/cxc-calculations.ts`.
+- `frontend/`: React + Vite + TypeScript. Consume la API local.
+- `backend/`: API interna Node.js organizada por dominios.
+- `data/`: datos locales de entrada. `data/private/` queda fuera de Git.
+- `docs/`: documentacion humana de arquitectura, flujos y reglas.
+- `scripts/`: utilitarios de desarrollo, diagnostico y automatizacion.
 
 ## Comandos
 
+Instalar dependencias por aplicacion:
+
 ```bash
+cd frontend
 npm install
+
+cd ../backend
+npm install
+```
+
+Ejecutar en desarrollo:
+
+```bash
+cd backend
+npm run dev
+
+cd ../frontend
 npm run dev
 ```
 
-Luego abrir `http://localhost:3000`.
+URLs locales:
 
-## Validación
+- Frontend: `http://127.0.0.1:3000`
+- Backend: `http://127.0.0.1:4000`
 
-```bash
-npm run typecheck
-npm run build
-```
+## Modulos principales
 
-## Preparación para base de datos
+Backend:
 
-La lógica de saldo, vencimiento, estados, timeline y KPIs está separada de la interfaz. Para conectar SQL más adelante, el reemplazo principal debería estar en la capa de datos que hoy usa `clientesMock` y `facturasMock`.
+- `backend/src/modules/accounts-receivable/`: facturas, KPIs, saldos y timelines.
+- `backend/src/modules/customers/`: clientes B2B/B2C.
+- `backend/src/modules/document-intake/`: preparacion de ingreso documental.
 
-## Folios documentales
+Frontend:
 
-Los datos guardan el número SII limpio en `numero`. La interfaz muestra el folio con prefijo mediante `formatearFolioDocumento()` en `lib/document-ids.ts`.
+- `frontend/src/modules/accounts-receivable/`: dashboard y consulta de facturas.
+- `frontend/src/modules/customers/`: pantalla de clientes.
+- `frontend/src/modules/document-intake/`: formulario de ingreso documental.
+- `frontend/src/modules/traceability/`: trazabilidad documental.
+
+## Rutas API
+
+- `GET /api/health`
+- `GET /api/accounts-receivable/dashboard`
+- `GET /api/accounts-receivable/invoices`
+- `GET /api/accounts-receivable/timelines`
+- `GET /api/customers`
+- `POST /api/document-intake/documents`
+
+## Reglas operativas
+
+- El backend protege secretos y centraliza integraciones.
+- El frontend no lee archivos privados ni credenciales.
+- Datos sensibles y documentos reales viven en `data/private/`.
+- Cada dominio tiene su espacio propio; lo compartido vive en `shared`.
+- Cambios de reglas van primero a `backend/src/modules/<dominio>/application`.
