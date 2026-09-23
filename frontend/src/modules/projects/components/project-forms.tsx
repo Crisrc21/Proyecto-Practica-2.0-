@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type FormEvent } from "rea
 import { X } from "lucide-react";
 import { milestoneTypes, projectScopes, type Project, type Milestone } from "../types";
 import { shortDate, todayISO } from "../data/project-calculations";
-import { isAdvanceMilestone, natures } from "../data/project-workflow";
+import { isAdvanceMilestone } from "../data/project-workflow";
 
 export function Editor({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -40,6 +40,8 @@ function scopeForEditor(m: Milestone): Milestone["scope"] {
 }
 export function ProjectForm({ project, onSave, onClose }: { project: Project; onSave: (p: Project, reason: string) => Promise<void>; onClose: () => void }) {
   const [draft, setDraft] = useState(project);
+  const [projectType, setProjectType] = useState(project.nature === 1 ? "tgm" : project.nature ? "completa" : "");
+  const [constructionNature, setConstructionNature] = useState<2 | 3 | 4 | null>(project.nature && project.nature !== 1 ? project.nature : null);
   const reason = project.revision ? "Ficha del proyecto actualizada" : "Alta del proyecto";
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const update = <K extends keyof Project>(key: K, value: Project[K]) => setDraft(p => ({ ...p, [key]: value }));
@@ -53,7 +55,8 @@ export function ProjectForm({ project, onSave, onClose }: { project: Project; on
     <label className="project-field">Responsable CDG<input value={draft.owner} onChange={e => update("owner", e.target.value)} /></label>
     <label className="project-field">Cantidad de viviendas<input type="number" min="0" step="1" required value={draft.units} onChange={e => update("units", Number(e.target.value))} /></label>
     <label className="project-field">Superficie total contratada (m²)<input type="number" min="0" step="any" value={draft.areaM2 ?? ""} onChange={e => update("areaM2", e.target.value === "" ? null : Number(e.target.value))} /></label>
-    <label className="project-field project-full">Naturaleza del proyecto<select value={draft.nature ?? ""} required={draft.lifecycle !== "Potencial"} onChange={e => update("nature", e.target.value ? Number(e.target.value) as Project["nature"] : null)}><option value="">Selecciona la naturaleza</option>{natures.map(n => <option key={n.id} value={n.id}>Naturaleza {n.id}: {n.label}</option>)}</select><span>TGM: Traslado, Grúa y Montaje. Fundaciones se mantiene en todas las naturalezas.</span></label>
+    <label className="project-field project-full">Tipo de proyecto<select value={projectType} required={draft.lifecycle !== "Potencial"} onChange={e => { const type = e.target.value; setProjectType(type); update("nature", type === "tgm" ? 1 : type === "completa" ? constructionNature : null); }}><option value="" disabled>Selecciona el tipo de proyecto</option><option value="tgm">Fabricación y Montaje (TGM)</option><option value="completa">Construcción Completa</option></select></label>
+    {projectType === "completa" && <label className="project-field project-full">Composición de la Construcción Completa<select required value={constructionNature ?? ""} onChange={e => { const nature = Number(e.target.value) as 2 | 3 | 4; setConstructionNature(nature); update("nature", nature); }}><option value="" disabled>Selecciona cómo se conforma</option><option value="2">TGM, Urbanización Interior</option><option value="3">TGM, Urbanización Interior y Exterior</option><option value="4">TGM, Urbanización Exterior</option></select></label>}
     <label className="project-field">Tipo de contrato<input value={draft.contractType} onChange={e => update("contractType", e.target.value)} /></label>
     <label className="project-field">Moneda contractual<select value={draft.currency} onChange={e => update("currency", e.target.value as Project["currency"])}><option>UF</option><option>CLP</option></select></label>
     <label className="project-field">Monto contractual, IVA incluido<input type="number" min="0" step="any" value={draft.contractAmount ?? ""} onChange={e => update("contractAmount", e.target.value === "" ? null : Number(e.target.value))} /></label>

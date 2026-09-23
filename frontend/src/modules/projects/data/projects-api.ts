@@ -1,4 +1,7 @@
-import type { Project } from "../types";
+import type { Project, ProgressReport } from "../types";
+export function editProjectProgress(project: Project, report: ProgressReport) {
+  return request<Project>("/projects/progress/edit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, expectedRevision: project.revision, report }) });
+}
 const baseUrl = (import.meta.env.VITE_API_BASE_URL?.trim() || "/api").replace(/\/$/, "");
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, options);
@@ -9,6 +12,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 export function loadProjects() {
   return request<{ projects: Project[]; integration: { status: string; provider: string } }>("/projects");
+}
+export function deleteProject(project: Project) {
+  return request<{ projectId: string }>("/projects/delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, expectedRevision: project.revision }) });
+}
+export function deleteProjectEdp(project: Project, milestoneId: string) {
+  return request<Project>("/projects/edps/delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, milestoneId, expectedRevision: project.revision }) });
 }
 export function saveProject(project: Project, reason: string) {
   return request<Project>("/projects/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ project, expectedRevision: project.revision, reason }) });

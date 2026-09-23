@@ -29,6 +29,7 @@ export interface Project {
   lifecycle?: "Potencial" | "Firmado"; nature?: 1 | 2 | 3 | 4 | null; areaM2?: number | null;
   progressReports?: ProgressReport[];
   excludedStages?: StageKey[];
+  milestoneOrder?: string[];
   signedDate: string | null; startDate: string | null; endDate: string | null;
   ufValue: number | null; approvedFolder: string; paymentTerms: string; notes: string;
   scopes: string[]; sources: { name: string; reference: string }[];

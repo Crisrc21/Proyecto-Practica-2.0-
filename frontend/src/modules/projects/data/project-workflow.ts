@@ -26,8 +26,36 @@ export const metricLabels: Record<ProgressMetric, string> = {
 export function activeStages(nature: Project["nature"]) {
   return stages.filter(s => s.key !== "interior" && s.key !== "exterior" || s.key === "interior" && [2, 3].includes(nature || 0) || s.key === "exterior" && [3, 4].includes(nature || 0));
 }
+export function orderedWorkflowMilestones(project: Project) {
+  const keys = activeStages(project.nature).filter(s => !project.excludedStages?.includes(s.key)).map(s => s.key);
+  const defaults = [...keys.flatMap(key => project.milestones.filter(m => m.stageKey === key)), ...project.milestones.filter(m => !m.stageKey && !m.edp)];
+  const order = project.milestoneOrder || [];
+  return [...order.flatMap(id => defaults.filter(m => m.id === id)), ...defaults.filter(m => !order.includes(m.id))];
+}
+export function moveWorkflowMilestone(ids: string[], source: string, target: string, after = false) {
+  if (source === target || !ids.includes(source) || !ids.includes(target)) return ids;
+  const next = ids.filter(id => id !== source);
+  next.splice(next.indexOf(target) + (after ? 1 : 0), 0, source);
+  return next;
+}
+export function invoiceMilestoneOptions(project: Project) {
+  return orderedWorkflowMilestones(project).filter(m => !m.edp && (Boolean(m.stageKey) || !["EDP", "Retenciones"].includes(m.type)));
+}
+export function milestoneDocuments(project: Project, milestoneId: string) {
+  const milestone = invoiceMilestoneOptions(project).find(m => m.id === milestoneId);
+  if (!milestone?.stageKey || isAdvanceMilestone(milestone)) return [];
+  return project.milestones.filter(m => m.edp?.stageKey === milestone.stageKey && !m.stageKey && !isAdvanceMilestone(m));
+}
 export function latestReport(p: Project, stage: StageKey, cutoff: string) {
   return [...(p.progressReports || [])].filter(r => r.stageKey === stage && r.date <= cutoff).sort((a, b) => a.date.localeCompare(b.date)).slice(-1)[0];
+}
+export function accumulateAssembly(project: Project, report: ProgressReport): ProgressReport {
+  const previous = latestReport(project, "montaje", "9999-12-31");
+  if (report.quantity === null || !Number.isInteger(report.quantity) || report.quantity <= 0) throw new Error("Ingresa una cantidad entera de casas nuevas mayor que cero.");
+  if (previous && report.date < previous.date) throw new Error("La fecha debe ser igual o posterior al último registro de montaje.");
+  const total = (previous?.quantity ?? 0) + report.quantity;
+  if (total > project.units) throw new Error("El acumulado supera la cantidad de viviendas contratadas.");
+  return { ...report, quantity: total };
 }
 export function metricValue(p: Project, edp: EdpCondition, cutoff: string) {
   if (edp.metric === "firma") return p.signedDate && p.signedDate <= cutoff ? 1 : null;

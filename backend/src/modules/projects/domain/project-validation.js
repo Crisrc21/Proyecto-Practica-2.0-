@@ -36,6 +36,7 @@ export function validateProject(input) {
     areaM2: number(input.areaM2 ?? null, "superficie total contratada", true),
     progressReports: [],
     excludedStages: input.excludedStages ?? [],
+    milestoneOrder: input.milestoneOrder ?? [],
     contractType: text(input.contractType, "tipo de contrato", 100),
     currency: input.currency,
     contractAmount: number(input.contractAmount, "monto contractual", true),
@@ -58,6 +59,7 @@ export function validateProject(input) {
   if (p.nature !== null && ![1, 2, 3, 4].includes(p.nature)) fail("Naturaleza contractual inválida.");
   if (!Array.isArray(p.excludedStages) || p.excludedStages.some(key => key === "firma" || !stages.some(([stage]) => stage === key))) fail("Hitos excluidos inválidos. La firma del contrato se conserva.");
   p.excludedStages = [...new Set(p.excludedStages)];
+  if (!Array.isArray(p.milestoneOrder) || p.milestoneOrder.length > 500 || p.milestoneOrder.some(id => typeof id !== "string" || !id || id.length > 100) || new Set(p.milestoneOrder).size !== p.milestoneOrder.length) fail("Orden de hitos inválido.");
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   if (p.signedDate && p.signedDate > today) fail("La fecha de firma no puede estar en el futuro.");
   const reports = input.progressReports ?? [];

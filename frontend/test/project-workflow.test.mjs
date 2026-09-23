@@ -4,7 +4,46 @@ import { readFile } from "node:fs/promises";
 import ts from "typescript";
 const source=await readFile(new URL("../src/modules/projects/data/project-workflow.ts",import.meta.url),"utf8");
 const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {activeStages,physicalPercent,metricValue,advancePayment,workflowAtCutoff,isAdvanceMilestone}=await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
+const {accumulateAssembly,activeStages,physicalPercent,metricValue,advancePayment,workflowAtCutoff,isAdvanceMilestone,orderedWorkflowMilestones,moveWorkflowMilestone,invoiceMilestoneOptions,milestoneDocuments}=await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
+
+test("workflow drag ordering handles both directions, boundaries and unchanged drops",()=>{
+  const ids=["a","b","c","d"];
+  assert.deepEqual(moveWorkflowMilestone(ids,"a","d",true),["b","c","d","a"]);
+  assert.deepEqual(moveWorkflowMilestone(ids,"d","a"),["d","a","b","c"]);
+  assert.deepEqual(moveWorkflowMilestone(ids,"a","c"),["b","a","c","d"]);
+  assert.deepEqual(moveWorkflowMilestone(ids,"c","a",true),["a","c","b","d"]);
+  assert.deepEqual(moveWorkflowMilestone(ids,"a","a"),ids);
+  assert.deepEqual(moveWorkflowMilestone(ids,"outside","a"),ids);
+  assert.deepEqual(ids,["a","b","c","d"]);
+});
+
+test("assembly entries add new houses to existing cumulative reports including same-day entries",()=>{
+  const prior={id:"old",stageKey:"montaje",date:"2026-02-01",quantity:3};
+  const project={units:10,progressReports:[prior]};
+  const input={id:"new",stageKey:"montaje",date:"2026-02-01",quantity:2};
+  const saved=accumulateAssembly(project,input);
+  assert.equal(saved.quantity,5);
+  assert.equal(accumulateAssembly({...project,progressReports:[prior,saved]},{...input,id:"next",quantity:1}).quantity,6);
+  assert.equal(prior.quantity,3);
+  assert.equal(input.quantity,2);
+  for (const quantity of [null,0,-1,1.5,8]) assert.throws(()=>accumulateAssembly(project,{...input,quantity}));
+  assert.throws(()=>accumulateAssembly(project,{...input,date:"2026-01-31"}),/último registro/);
+});
+
+test("invoice selectors separate stages from their EDPs and keep advances direct",()=>{
+  const project={nature:1,milestones:[{id:"assembly",stageKey:"montaje",type:"Etapa"},{id:"factory",stageKey:"fabricacion",type:"Etapa"},{id:"advance",stageKey:"anticipo",type:"Etapa"},{id:"assembly-edp",type:"EDP",edp:{stageKey:"montaje"}},{id:"factory-edp",type:"EDP",edp:{stageKey:"fabricacion"}},{id:"legacy-edp",type:"EDP"},{id:"custom",type:"Otro"}]};
+  assert.deepEqual(invoiceMilestoneOptions(project).map(m=>m.id),["advance","factory","assembly","custom"]);
+  assert.deepEqual(milestoneDocuments(project,"assembly").map(m=>m.id),["assembly-edp"]);
+  assert.deepEqual(milestoneDocuments(project,"factory").map(m=>m.id),["factory-edp"]);
+  assert.deepEqual(milestoneDocuments(project,"advance"),[]);
+  assert.deepEqual(milestoneDocuments(project,"missing"),[]);
+});
+
+test("custom and standard milestones share saved ordering while new milestones remain visible",()=>{
+  const project={nature:1,excludedStages:[],milestones:[{id:"signature",stageKey:"firma"},{id:"advance",stageKey:"anticipo"},{id:"custom"},{id:"edp",edp:{stageKey:"fabricacion"}},{id:"new"}],milestoneOrder:["custom","advance","removed","signature"]};
+  assert.deepEqual(orderedWorkflowMilestones(project).map(m=>m.id),["custom","advance","signature","new"]);
+  assert.deepEqual(orderedWorkflowMilestones({...project,excludedStages:["anticipo"]}).map(m=>m.id),["custom","signature","new"]);
+});
 const p={units:10,areaM2:1000,signedDate:"2026-01-01",milestones:[],invoiceLinks:[],progressReports:[
   {id:"r1",stageKey:"fabricacion",date:"2026-02-01",quantity:500,completedUnits:3,percent:null,evidence:"Informe"},
   {id:"r2",stageKey:"fabricacion",date:"2026-03-01",quantity:1000,completedUnits:10,percent:null,evidence:"Informe"}

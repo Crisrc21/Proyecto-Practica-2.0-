@@ -3,6 +3,7 @@ import { Link2, Unlink } from "lucide-react";
 import type { FacturaCalculada } from "../../accounts-receivable/types";
 import type { DataState, Project } from "../types";
 import { amount, monthlyCash } from "../data/project-calculations";
+import { invoiceMilestoneOptions, isAdvanceMilestone, milestoneDocuments } from "../data/project-workflow";
 import { AppLink } from "../../../shared/components/app-link";
 
 const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -11,18 +12,23 @@ export function ProjectCash({ projects, allProjects, invoices, dataState, cutoff
   const [version, setVersion] = useState<"base" | "current">("base");
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [invoiceId, setInvoiceId] = useState(""); const [milestoneId, setMilestoneId] = useState("");
+  const [documentId, setDocumentId] = useState("");
   const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const reports = useMemo(() => projects.map(p => ({ project: p, ...monthlyCash(p, invoices, dataState, year, cutoff, version) })), [projects, invoices, dataState, year, cutoff, version]);
   const project = projects.length === 1 ? projects[0] : null;
+  const milestones = project ? invoiceMilestoneOptions(project) : [];
+  const selectedMilestone = milestones.find(m => m.id === milestoneId);
+  const directLink = Boolean(selectedMilestone && isAdvanceMilestone(selectedMilestone));
+  const documents = project ? milestoneDocuments(project, milestoneId) : [];
+  const linkedMilestoneId = directLink ? selectedMilestone!.id : documents.find(m => m.id === documentId)?.id;
   const assigned = new Set(allProjects.flatMap(p => p.invoiceLinks.map(l => l.invoiceId)));
   const rut = (value: string) => value.replace(/[^\dkK]/g, "").toUpperCase();
   const candidates = project ? invoices.filter(i => !assigned.has(i.id) && !i.anulada && (!project.customerRut || rut(i.cliente?.rut || i.clienteId) === rut(project.customerRut))) : [];
   const unassignedTotal = invoices.filter(i => !assigned.has(i.id)).reduce((sum, i) => sum + i.pagos.filter(p => p.fechaPago.startsWith(String(year)) && p.fechaPago <= cutoff).reduce((s, p) => s + p.monto, 0), 0);
   async function associate() {
-    if (!project || !invoiceId || !milestoneId) return;
-    if (!project.milestones.some(m => m.id === milestoneId)) { setError("Selecciona un hito del contrato actual."); return; }
+    if (!project || !invoiceId || !selectedMilestone || !linkedMilestoneId) return;
     setBusy(true); setError("");
-    try { await onSave({ ...project, invoiceLinks: [...project.invoiceLinks, { invoiceId, milestoneId }] }, "Factura vinculada a su proyecto e hito"); setInvoiceId(""); setMilestoneId(""); }
+    try { await onSave({ ...project, invoiceLinks: [...project.invoiceLinks, { invoiceId, milestoneId: linkedMilestoneId }] }, directLink ? "Factura vinculada al anticipo" : "Factura vinculada al EDP de su hito"); setInvoiceId(""); setMilestoneId(""); setDocumentId(""); }
     catch (err) { setError(err instanceof Error ? err.message : "No se pudo vincular."); }
     finally { setBusy(false); }
   }
@@ -57,11 +63,12 @@ export function ProjectCash({ projects, allProjects, invoices, dataState, cutoff
       })}</div>}
     </section>
     {project && <section className="project-panel"><div className="project-panel-heading"><div><h2>Vincular facturas con hitos</h2><p>Una factura se asigna completa a un proyecto e hito. Sus pagos se consultan desde CxC.</p></div><Link2 size={20} aria-hidden="true" /></div>
-      <div className="project-link-form"><label className="project-field">Factura del cliente<select value={invoiceId} onChange={e => setInvoiceId(e.target.value)} disabled={dataState !== "ready"}><option value="">Selecciona una factura</option>{candidates.map(i => <option key={i.id} value={i.id}>{i.numero} · {i.cliente?.nombre} · {amount(i.monto)}</option>)}</select></label><label className="project-field">Hito asociado<select value={milestoneId} onChange={e => setMilestoneId(e.target.value)}><option value="">Selecciona un hito</option>{project.milestones.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label><button type="button" className="project-button primary" disabled={busy || !invoiceId || !milestoneId} onClick={associate}>Vincular factura</button></div>
+      <div className="project-link-form"><label className="project-field">Factura del cliente<select value={invoiceId} onChange={e => setInvoiceId(e.target.value)} disabled={dataState !== "ready"}><option value="">Selecciona una factura</option>{candidates.map(i => <option key={i.id} value={i.id}>{i.numero} · {i.cliente?.nombre} · {amount(i.monto)}</option>)}</select></label><label className="project-field">Hito asociado<select value={milestoneId} onChange={e => { setMilestoneId(e.target.value); setDocumentId(""); setError(""); }}><option value="">Selecciona un hito</option>{milestones.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>{selectedMilestone && !directLink && <label className="project-field">Documentos<select value={documentId} disabled={busy || !documents.length} onChange={e => setDocumentId(e.target.value)}><option value="">{documents.length ? "Selecciona un estado de pago" : "Sin estados de pago asociados"}</option>{documents.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>}<button type="button" className="project-button primary" disabled={busy || dataState !== "ready" || !invoiceId || !linkedMilestoneId} onClick={associate}>Vincular factura</button></div>
       {!project.milestones.length && <p className="project-footnote">Este contrato aún no tiene hitos. Completa su naturaleza en la ficha o agrega un hito desde Líneas de tiempo.</p>}
+      {selectedMilestone && !directLink && !documents.length && <p className="project-footnote">Este hito no tiene estados de pago asociados. Planifica un EDP para este hito desde Estados de pago antes de vincular la factura.</p>}
       {error && <p className="project-error" role="alert">{error}</p>}
       {!candidates.length && <p className="project-footnote">{dataState !== "ready" ? "Las facturas se podrán vincular cuando la fuente de CxC esté disponible." : "No hay facturas pendientes de vincular para el RUT indicado en la ficha."}</p>}
-      {project.invoiceLinks.map(l => { const i = invoices.find(inv => inv.id === l.invoiceId); return <div className="project-invoice-row" key={l.invoiceId}><div>{i ? <AppLink href={`/trazabilidad?factura=${encodeURIComponent(i.id)}`}>Factura {i.numero}</AppLink> : "Factura vinculada no disponible"}<small>{project.milestones.find(m => m.id === l.milestoneId)?.name}</small></div><span>{i ? amount(i.monto) : "Sin dato"}</span><button type="button" className="project-button" disabled={busy} aria-label={`Desvincular factura ${i?.numero || l.invoiceId}`} onClick={() => removeLink(l.invoiceId)}><Unlink size={14} />Desvincular</button></div>; })}
+      {project.invoiceLinks.map(l => { const i = invoices.find(inv => inv.id === l.invoiceId); const document = project.milestones.find(m => m.id === l.milestoneId); const parent = document?.edp ? project.milestones.find(m => m.stageKey === document.edp!.stageKey) : undefined; return <div className="project-invoice-row" key={l.invoiceId}><div>{i ? <AppLink href={`/trazabilidad?factura=${encodeURIComponent(i.id)}`}>Factura {i.numero}</AppLink> : "Factura vinculada no disponible"}<small>{parent ? `${parent.name} · ${document?.name}` : document?.name}</small></div><span>{i ? amount(i.monto) : "Sin dato"}</span><button type="button" className="project-button" disabled={busy} aria-label={`Desvincular factura ${i?.numero || l.invoiceId}`} onClick={() => removeLink(l.invoiceId)}><Unlink size={14} />Desvincular</button></div>; })}
     </section>}
   </div>;
 }

@@ -70,6 +70,78 @@ async function activate(service, nature=1) {
 }
 async function update(service,p,patch) { return service.save({project:{...p,...patch},expectedRevision:p.revision,reason:"Seguimiento"}); }
 
+test("editing assembly increments recalculates subsequent totals and preserves correction audit",async t=>{
+  const {service,repo}=await setup(t); let p=await activate(service);
+  const first={id:"assembly1",stageKey:"montaje",date:"2026-02-01",quantity:1,completedUnits:null,percent:null,evidence:"Informe 1"};
+  const second={...first,id:"assembly2",date:"2026-02-02",quantity:3,evidence:"Informe 2"};
+  p=await update(service,p,{progressReports:[first,second]});
+  const saved=await service.editProgress({projectId:p.id,expectedRevision:p.revision,report:{...first,quantity:2,evidence:"Informe corregido"}});
+  assert.deepEqual(saved.progressReports.map(r=>r.quantity),[2,4]);
+  assert.equal(saved.revision,p.revision+1);
+  assert.equal(saved.history.at(-1).reason,"Avance corregido");
+  assert.deepEqual((await repo.read()).progressCorrections[0].before,[first,second]);
+  await assert.rejects(service.editProgress({projectId:p.id,expectedRevision:p.revision,report:first}),/otra sesión/);
+  await assert.rejects(service.editProgress({projectId:p.id,expectedRevision:saved.revision,report:{...first,quantity:99999}}),/contratadas/);
+  const moved=await service.editProgress({projectId:p.id,expectedRevision:saved.revision,report:{...first,date:"2026-02-03",quantity:2}});
+  assert.equal(moved.progressReports.find(r=>r.id===second.id).quantity,2);
+  assert.equal(moved.progressReports.find(r=>r.id===first.id).quantity,4);
+});
+
+test("explicit EDP deletion removes confirmed plans and links while preserving archive and other milestones",async t=>{
+  const {service,repo}=await setup(t); let p=await activate(service);
+  p=await update(service,p,{milestones:[...p.milestones,edp({baselineApproved:true})]});
+  const target=p.milestones.find(m=>m.edp);
+  p=await update(service,p,{invoiceLinks:[{invoiceId:"bill",milestoneId:target.id}]});
+  const result=await service.removeEdp({projectId:p.id,milestoneId:target.id,expectedRevision:p.revision});
+  assert.deepEqual(result.milestones,p.milestones.filter(m=>m.id!==target.id));
+  assert.equal(result.invoiceLinks.length,0);
+  assert.equal(result.revision,p.revision+1);
+  assert.match(result.history.at(-1).reason,/EDP eliminado/);
+  assert.deepEqual((await repo.read()).deletedEdps[0].milestone,target);
+  assert.equal((await service.list()).projects[0].milestones.some(m=>m.id===target.id),false);
+  await assert.rejects(service.removeEdp({projectId:p.id,milestoneId:target.id,expectedRevision:p.revision}),/otra sesión/);
+  await assert.rejects(service.removeEdp({projectId:p.id,milestoneId:result.milestones[0].id,expectedRevision:result.revision}),/no es un EDP/);
+});
+
+test("deleting a signed project persists, archives its data and releases invoice links",async t=>{
+  const {service,repo,folder}=await setup(t);
+  const p=await service.save({project:project({invoiceLinks:[{invoiceId:"bill",milestoneId:"edp1"}]}),expectedRevision:0});
+  const other=await service.save({project:project({id:"other"}),expectedRevision:0});
+  await service.remove({projectId:p.id,expectedRevision:p.revision});
+  const fresh=createProjectsService(createProjectsRepository({dataPrivatePath:folder}));
+  assert.deepEqual((await fresh.list()).projects.map(p=>p.id),[other.id]);
+  const archived=(await repo.read()).deletedProjects[0];
+  assert.deepEqual(archived.milestones,p.milestones);
+  assert.deepEqual(archived.history,p.history);
+  assert(archived.deletedAt);
+  const linked=await update(fresh,other,{invoiceLinks:[{invoiceId:"bill",milestoneId:"edp1"}]});
+  assert.equal(linked.invoiceLinks[0].invoiceId,"bill");
+  await assert.rejects(fresh.save({project:p,expectedRevision:0}),/eliminado/);
+});
+
+test("deleting potentials validates revision and rejects duplicate or missing requests",async t=>{
+  const {service}=await setup(t);
+  const p=await service.save({project:potential(),expectedRevision:0});
+  const changed=await update(service,p,{name:"Nombre actualizado"});
+  await assert.rejects(service.remove({projectId:p.id,expectedRevision:p.revision}),/otra sesión/);
+  assert.equal((await service.list()).projects.length,1);
+  await assert.rejects(service.remove({projectId:p.id}),/versión/);
+  await service.remove({projectId:p.id,expectedRevision:changed.revision});
+  assert.equal((await service.list()).projects.length,0);
+  await assert.rejects(service.remove({projectId:p.id,expectedRevision:changed.revision}),/ya no existe/);
+});
+
+test("workflow order persists without modifying milestone data",async t=>{
+  const {service}=await setup(t); let p=await activate(service);
+  const before=p.milestones;
+  const order=before.map(m=>m.id).reverse();
+  p=await update(service,p,{milestoneOrder:order});
+  assert.deepEqual((await service.list()).projects[0].milestoneOrder,order);
+  assert.deepEqual(p.milestones,before);
+  assert(p.history.at(-1).changes.includes("Orden de los hitos actualizado"));
+  await assert.rejects(update(service,p,{milestoneOrder:[order[0],order[0]]}),/Orden de hitos inválido/);
+});
+
 test("contract stages can be removed persistently and restored without affecting other contracts",async t=>{
   const {service}=await setup(t); let p=await activate(service);
   const target=p.milestones.find(m=>m.stageKey==="montaje");

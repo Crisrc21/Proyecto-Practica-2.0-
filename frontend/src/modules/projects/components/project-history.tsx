@@ -1,22 +1,22 @@
 import { useState } from "react";
 import { CalendarDays, Check, Clock3, TrendingUp } from "lucide-react";
-import type { Project, StageKey } from "../types";
+import type { Project, ProgressReport, StageKey } from "../types";
 import { shortDate } from "../data/project-calculations";
 import { progressSeries, stageReports } from "../data/project-history";
 import { stages } from "../data/project-workflow";
 
 const fmt = (n: number) => new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(n);
-export interface HistoryEvent { id: string; date: string; title: string; detail: string; evidence?: string; href?: string; planned?: boolean }
+export interface HistoryEvent { id: string; date: string; title: string; detail: string; evidence?: string; href?: string; planned?: boolean; onEdit?: () => void }
 export function HistoryLine({ events, empty = "Aún no hay movimientos registrados." }: { events: HistoryEvent[]; empty?: string }) {
   const [limit, setLimit] = useState(12);
   const sorted = [...events].reverse().sort((a, b) => b.date.localeCompare(a.date));
   if (!events.length) return <div className="project-history-empty"><Clock3 size={24} /><p>{empty}</p></div>;
-  return <><ol className="project-event-line">{sorted.slice(0, limit).map(e => <li key={e.id} className={e.planned ? "is-planned" : ""}><span className="project-event-dot">{e.planned ? <CalendarDays size={13} /> : <Check size={13} />}</span><div className="project-event-body"><div><h4>{e.title}</h4><time dateTime={e.date}>{shortDate(e.date)}</time></div><p>{e.detail}</p>{e.evidence && <small>{e.evidence}</small>}{e.href && <a href={e.href}>Ver factura en CxC</a>}</div></li>)}</ol>{sorted.length > limit && <button className="project-button project-history-more" onClick={() => setLimit(v => v + 12)}>Ver más movimientos ({sorted.length - limit})</button>}</>;
+  return <><ol className="project-event-line">{sorted.slice(0, limit).map(e => <li key={e.id} className={e.planned ? "is-planned" : ""}><span className="project-event-dot">{e.planned ? <CalendarDays size={13} /> : <Check size={13} />}</span><div className="project-event-body"><div><h4>{e.title}</h4><time dateTime={e.date}>{shortDate(e.date)}</time></div><p>{e.detail}</p>{e.evidence && <small>{e.evidence}</small>}{e.onEdit && <button className="project-button" onClick={e.onEdit}>Editar avance</button>}{e.href && <a href={e.href}>Ver factura en CxC</a>}</div></li>)}</ol>{sorted.length > limit && <button className="project-button project-history-more" onClick={() => setLimit(v => v + 12)}>Ver más movimientos ({sorted.length - limit})</button>}</>;
 }
-export function ProgressHistory({ project, stage, cutoff }: { project: Project; stage: StageKey; cutoff: string }) {
+export function ProgressHistory({ project, stage, cutoff, onEdit }: { project: Project; stage: StageKey; cutoff: string; onEdit?: (r: ProgressReport) => void }) {
   const [allStages, setAllStages] = useState(false);
   const reports = stageReports(project, allStages ? "all" : stage, cutoff);
-  const events: HistoryEvent[] = reports.map(r => ({ id: r.id, date: r.date, title: `${stages.find(s => s.key === r.stageKey)?.label} · corte de avance`, detail: [r.quantity !== null ? `${fmt(r.quantity)} ${r.stageKey === "fabricacion" ? "m² fabricados" : "casas"}` : "", r.completedUnits !== null ? `${fmt(r.completedUnits)} casas terminadas` : "", r.percent !== null ? `${fmt(r.percent)}% de avance` : ""].filter(Boolean).join(" · "), evidence: r.evidence }));
+  const events: HistoryEvent[] = reports.map(r => ({ id: r.id, date: r.date, title: `${stages.find(s => s.key === r.stageKey)?.label} · corte de avance`, detail: [r.quantity !== null ? `${fmt(r.quantity)} ${r.stageKey === "fabricacion" ? "m² fabricados" : "casas"}` : "", r.completedUnits !== null ? `${fmt(r.completedUnits)} casas terminadas` : "", r.percent !== null ? `${fmt(r.percent)}% de avance` : ""].filter(Boolean).join(" · "), evidence: r.evidence, onEdit: onEdit ? () => onEdit(r) : undefined }));
   if ((allStages || stage === "firma") && project.signedDate && project.signedDate <= cutoff) events.push({ id: "contract-signature", date: project.signedDate, title: "Contrato firmado", detail: "Inicio del seguimiento contractual" });
   return <section className="project-panel"><div className="project-panel-heading"><div><h3>Historia de avances</h3><p>Últimos movimientos primero · hasta {shortDate(cutoff)}</p></div><label className="project-check"><input type="checkbox" checked={allStages} onChange={e => setAllStages(e.target.checked)} />Todas las etapas</label></div><HistoryLine key={`${stage}-${allStages}`} events={events} empty="Registra el primer avance para comenzar la historia de esta etapa." /></section>;
 }

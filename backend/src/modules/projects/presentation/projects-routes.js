@@ -14,6 +14,9 @@ async function readProjectBody(request) {
   catch { throw new HttpError(400, "No se pudo leer el proyecto enviado."); }
 }
 export const projectsRoutes = [
+  { method: "POST", path: "/api/projects/progress/edit", handler: async ({ env, request }) => createProjectsService(createProjectsRepository(env)).editProgress(await readProjectBody(request)) },
+  { method: "POST", path: "/api/projects/edps/delete", handler: async ({ env, request }) => createProjectsService(createProjectsRepository(env)).removeEdp(await readProjectBody(request)) },
+  { method: "POST", path: "/api/projects/delete", handler: async ({ env, request }) => createProjectsService(createProjectsRepository(env)).remove(await readProjectBody(request)) },
   { method: "GET", path: "/api/projects", handler: ({ env }) => createProjectsService(createProjectsRepository(env)).list() },
   { method: "POST", path: "/api/projects/save", handler: async ({ env, request }) => createProjectsService(createProjectsRepository(env)).save(await readProjectBody(request)) }
 ];
